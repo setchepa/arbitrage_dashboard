@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.Python
+
+# Logs & scratch
+*.log
+scratch_*.png
+
+# OS
+.DS_Store
+
+# Dev scratch / endpoint-probe scripts
+scratch/

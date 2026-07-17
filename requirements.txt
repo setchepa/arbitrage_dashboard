@@ -1,0 +1,12 @@
+# Production runtime deps (what Railway installs to serve the dashboard).
+Flask==3.1.3
+gunicorn==26.0.0
+cloudscraper==1.2.71
+curl_cffi==0.15.0
+
+# Dev-only extras (NOT required to run the Flask app; install locally if you want
+# the old Streamlit prototype or the page-exploration scripts):
+#   streamlit==1.59.2      # app.py  (legacy Streamlit dashboard)
+#   beautifulsoup4==4.15.0 # explore_*.py
+#   lxml==6.1.1
+#   pillow                 # only used to convert/generate logo images

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CLP ↔ USD Arbitrage Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar">
+      <div class="side-head">
+        <span class="tile">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </span>
+        <h3>Parameters</h3>
+      </div>
+
+      <div class="field">
+        <label>Total budget (CLP)</label>
+        <div class="stepper">
+          <input id="budget" class="mono" inputmode="numeric" />
+          <button data-step="budget" data-dir="-1">−</button>
+          <button data-step="budget" data-dir="1">+</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Buda fee removed from Monto (%)</label>
+        <div class="stepper">
+          <input id="budaFee" class="mono" inputmode="decimal" />
+          <button data-step="budaFee" data-dir="-1">−</button>
+          <button data-step="budaFee" data-dir="1">+</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>USDC → USD rate (<span id="rateVenue">Robinhood</span>)</label>
+        <div class="stepper">
+          <input id="usdcRate" class="mono" inputmode="decimal" />
+          <button data-step="usdcRate" data-dir="-1">−</button>
+          <button data-step="usdcRate" data-dir="1">+</button>
+        </div>
+      </div>
+
+      <label style="display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mute);margin:22px 0 10px;">Cards</label>
+      <div class="accordion" id="accordion"></div>
+
+      <button class="refresh-btn" id="refreshBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Refresh live rates
+      </button>
+
+      <div class="footnote" id="asOf" style="margin-top:18px;"></div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+      <div class="toolbar">
+        <button class="theme-toggle" id="themeToggle"><span class="dot"></span><span id="themeLabel">Dark mode</span></button>
+      </div>
+
+      <div class="title-block">
+        <span class="title-glyph">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </span>
+        <div>
+          <h1>CLP <span class="swap">↔</span> USD Arbitrage Dashboard</h1>
+          <p class="subtitle">Charge a US card <span class="mono">(USD→CLP)</span> → buy USDC on Buda → transfer to <span id="subtitleVenue">Robinhood</span> → sell USDC→USD → pay the card. Profit and cashback are in USD; the optimizer routes CLP across cards to maximize profit under each card's cap and the total budget.</p>
+        </div>
+      </div>
+
+      <!-- loop-flow strip -->
+      <div class="flow-card" id="flowCard">
+        <div class="flow-grid">
+          <div class="flow-node">
+            <div class="eyebrow" style="margin-bottom:12px">Step 1 · Card</div>
+            <div class="cards-list" id="flowCards"></div>
+          </div>
+          <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+          <div class="flow-node">
+            <div class="logo-slot empty" id="logoSlotExch"><img id="logoExch" alt="" /></div>
+            <div class="eyebrow">Step 2 · Exchange</div>
+            <div class="brand" id="flowExchName">Buda</div>
+            <div class="fig mono" id="flowBudaFig">—</div>
+          </div>
+          <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+          <div class="flow-node">
+            <div class="logo-slot empty" id="logoSlotSell"><img id="logoSell" alt="" /></div>
+            <div class="eyebrow">Step 3 · Sell</div>
+            <div class="brand" id="flowSellName">Robinhood</div>
+            <div class="fig mono" id="flowRhFig">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- rate cards -->
+      <div class="rate-grid">
+        <div class="rate-card">
+          <div class="eyebrow"><span>Visa · Fidelity / Chase</span></div>
+          <div class="figure mono" id="visaFig">—</div>
+          <div class="unit mono">CLP / USD</div>
+        </div>
+        <div class="rate-card">
+          <div class="eyebrow"><span>Mastercard · CapitalOne</span></div>
+          <div class="figure mono" id="mcFig">—</div>
+          <div class="unit mono">CLP / USD</div>
+        </div>
+        <div class="rate-card">
+          <div class="eyebrow"><span>Buda · best ask</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+          <div class="figure mono" id="budaFig">—</div>
+          <div class="unit mono" id="budaUnit">CLP / USDC</div>
+        </div>
+      </div>
+
+      <!-- banner -->
+      <div class="banner" id="banner">
+        <span class="badge" id="bannerBadge"></span>
+        <span class="msg" id="bannerMsg">Computing…</span>
+      </div>
+
+      <!-- card economics -->
+      <h2>Card economics &amp; allocation</h2>
+      <div class="table-wrap scroll-x card-econ">
+        <table>
+          <thead>
+            <tr>
+              <th>Card</th><th>Network</th><th class="num">Cashback</th><th class="num">Cap (CLP)</th>
+              <th class="num">Cost/CLP (USD)</th><th class="num">→ Spend (CLP)</th>
+              <th class="num">USDC bought</th><th class="num">Cashback (USD)</th><th class="num">Profit (USD)</th>
+            </tr>
+          </thead>
+          <tbody id="econBody"></tbody>
+        </table>
+      </div>
+      <div class="footnote">Cards are ranked by effective cost per CLP (lower = used first). The optimizer walks Buda's live order book, so each extra CLP buys USDC at a slightly worse price (slippage).</div>
+
+      <!-- income breakdown -->
+      <h2>Income breakdown</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Income source</th><th class="num">USD</th></tr></thead>
+          <tbody id="incomeBody"></tbody>
+        </table>
+      </div>
+      <div class="footnote" id="incomeNote"></div>
+
+      <!-- loop totals -->
+      <h2>Loop totals</h2>
+      <div class="totals" id="totals"></div>
+      <div class="footnote mono" id="budaEffNote"></div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
