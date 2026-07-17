@@ -13,6 +13,7 @@ const state = {
   usdcRate: 1.0100,
   openCard: null,
   showFlow: true,
+  paramsOpen: false,  // mobile-only: parameters sheet open?
   cards: [
     { name: 'Fidelity',   network: 'Visa',       cashback: 2.0, capOn: true,  cap: 5000000, dot: '#1F7B2C' },
     { name: 'CapitalOne', network: 'Mastercard', cashback: 1.5, capOn: false, cap: 5000000, dot: '#CF2128' },
@@ -29,6 +30,7 @@ const CARD_LOGOS = {
   CapitalOne: 'logos/capitalone.png',
   Chase: 'logos/chase.png',
 };
+const CARD_DOTS = { Fidelity: '#1F7B2C', CapitalOne: '#CF2128', Chase: '#0052AC' };
 // Sell venue (Step 3) depends on the peg: exactly $1.00 -> Robinhood (sells at
 // peg); any other USDC->USD rate implies selling via Binance instead.
 function sellVenue() {
@@ -155,9 +157,11 @@ function render() {
       const img = src
         ? `<img alt="" src="${src}" onload="this.parentElement.classList.remove('empty')" onerror="this.parentElement.classList.add('empty')" />`
         : '';
+      const dot = CARD_DOTS[c.name]
+        ? `<span class="brand-dot" style="background:${CARD_DOTS[c.name]}"></span>` : '';
       return `<div class="card-item">
           <div class="logo-slot empty">${img}</div>
-          <div class="brand">${c.name}</div>
+          <div class="brand">${c.name}</div>${dot}
           <div class="fig mono">${clp(c.clp)} CLP</div>
         </div>`;
     }).join('')
@@ -209,6 +213,31 @@ function render() {
       <td class="num">${used ? usd(c.cashbackUsd) : `<span class="mute">${DASH}</span>`}</td>
       <td class="num ${used ? profClass : ''}">${used ? usd(c.profit) : `<span class="mute">${DASH}</span>`}</td>
     </tr>`;
+  }).join('');
+
+  // card economics — mobile: one card per brand
+  $('econCards').innerHTML = econ.map((c) => {
+    const used = c.clp > 0.5;
+    const cap = c.cap === Infinity ? DASH : clp(c.cap);
+    const cbPct = (c.cashback * 100).toFixed(1) + '%';
+    const usdc = c.usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const profCls = c.profit > 0 ? 'pos' : (c.profit < 0 ? 'neg' : '');
+    const fields = used
+      ? [['Cap (CLP)', cap], ['Cost/CLP', c.costCoeff.toFixed(8)],
+         ['Spend (CLP)', clp(c.clp)], ['USDC bought', usdc],
+         ['Cashback', usd(c.cashbackUsd)], ['Profit', usd(c.profit), profCls]]
+      : [['Cap (CLP)', cap], ['Cost/CLP', c.costCoeff.toFixed(8)]];
+    return `<div class="econ-card ${used ? '' : 'unused'}">
+        <div class="econ-card-head">
+          <span class="brand-dot" style="background:${CARD_DOTS[c.name]}"></span>
+          <span class="ec-name">${c.name}</span>
+          <span class="ec-net">${c.network}${used ? '' : ' · unused'}</span>
+          <span class="cb-pill">${cbPct}</span>
+        </div>
+        <div class="econ-grid">
+          ${fields.map((f) => `<div class="econ-field"><span class="k">${f[0]}</span><span class="v ${f[2] || ''}">${f[1]}</span></div>`).join('')}
+        </div>
+      </div>`;
   }).join('');
 
   // income breakdown
@@ -313,13 +342,26 @@ function bindInputs() {
 }
 
 // ---- theme ----
+const MOON_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const SUN_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', state.theme);
   $('themeLabel').textContent = state.theme === 'light' ? 'Dark mode' : 'Light mode';
+  // mobile header: icon-only toggle (moon = switch to dark, sun = switch to light)
+  $('mThemeToggle').innerHTML = state.theme === 'light' ? MOON_ICON : SUN_ICON;
 }
-$('themeToggle').addEventListener('click', () => {
+function toggleTheme() {
   state.theme = state.theme === 'light' ? 'dark' : 'light';
   applyTheme();
+}
+$('themeToggle').addEventListener('click', toggleTheme);
+$('mThemeToggle').addEventListener('click', toggleTheme);
+
+// ---- mobile: parameters sheet (gear) ----
+$('gearBtn').addEventListener('click', () => {
+  state.paramsOpen = !state.paramsOpen;
+  document.querySelector('.app').classList.toggle('params-open', state.paramsOpen);
 });
 
 // ---- fetch live rates ----
@@ -348,3 +390,4 @@ syncFields();
 buildAccordion();
 bindInputs();
 fetchRates();
+

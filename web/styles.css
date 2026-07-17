@@ -216,6 +216,7 @@ h2 { font-size: 19px; font-weight: 600; margin: 30px 0 14px; }
 .flow-node .fig { font-size: 12.5px; color: var(--text-dim); }
 .cards-list { display: flex; flex-direction: column; gap: 16px; align-items: center; }
 .card-item { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.card-item .brand-dot { display: none; }  /* shown only on mobile */
 .flow-arrow { color: var(--accent); display: flex; justify-content: center; }
 
 /* ---- Rate cards ---- */
@@ -284,10 +285,138 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
 .footnote { font-size: 12.5px; color: var(--text-mute); margin-top: 12px; }
 .footnote .mono { font-size: 12.5px; }
 
-/* responsive */
-@media (max-width: 1040px) {
-  .rate-grid { grid-template-columns: 1fr; }
-  .totals { grid-template-columns: repeat(2, 1fr); }
-  .flow-grid { grid-template-columns: 1fr; }
-  .flow-arrow { transform: rotate(90deg); }
+/* ---- Mobile header (hidden on desktop) ---- */
+.m-header { display: none; }
+.m-glyph {
+  width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.m-glyph svg { stroke: var(--accent); }
+.m-titles { line-height: 1.16; }
+.m-title { font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; }
+.m-title .swap { color: var(--accent); }
+.m-sub { font-size: 11px; color: var(--text-mute); }
+.m-actions { margin-left: auto; display: flex; gap: 8px; }
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 11px; background: var(--input-bg);
+  border: 1px solid var(--input-border); color: var(--text-dim); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { color: var(--text); }
+
+/* node-text wrapper (keeps eyebrow+brand grouped; identical on desktop) */
+.node-text { display: flex; flex-direction: column; gap: 6px; text-align: center; }
+
+/* ---- Economics cards (mobile only) ---- */
+.econ-cards { display: none; }
+.econ-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 14px; padding: 14px 16px;
+}
+.econ-card.unused { opacity: .72; }
+.econ-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.econ-card-head .brand-dot { width: 8px; height: 8px; border-radius: 2px; }
+.econ-card-head .ec-name { font-weight: 600; font-size: 14px; }
+.econ-card-head .ec-net { color: var(--text-mute); font-size: 12px; }
+.econ-card-head .cb-pill {
+  margin-left: auto; padding: 3px 9px; border-radius: 999px;
+  background: var(--pos-soft); color: var(--pos-ink);
+  font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;
+  font-size: 11.5px; font-weight: 600;
+}
+.econ-card.unused .cb-pill { background: var(--head-bg); color: var(--text-mute); }
+.econ-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.econ-field { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.econ-field .k { color: var(--text-mute); }
+.econ-field .v { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.econ-field .v.pos { color: var(--pos); font-weight: 600; }
+.econ-field .v.neg { color: var(--neg); font-weight: 600; }
+
+/* ============================================================
+   MOBILE  (< 900px) — desktop spec applies unchanged >= 900px
+   ============================================================ */
+@media (max-width: 899px) {
+  .app { display: block; }
+
+  /* sticky header replaces the toolbar + title block */
+  .m-header {
+    display: flex; align-items: center; gap: 11px;
+    position: sticky; top: 0; z-index: 30;
+    background: var(--panel); border-bottom: 1px solid var(--panel-border);
+    padding: 11px 16px;
+  }
+  .toolbar, .title-block { display: none; }
+
+  /* sidebar becomes a collapsible parameters sheet */
+  .sidebar {
+    position: static; width: auto; height: auto; overflow: visible;
+    border-right: none; display: none;
+    margin: 14px 16px 0; padding: 18px;
+    background: var(--card); border: 1px solid var(--card-border); border-radius: 18px;
+  }
+  .app.params-open .sidebar { display: block; }
+
+  /* main = ordered, gapped column; result-first ordering */
+  .main { display: flex; flex-direction: column; gap: 18px; padding: 16px 16px 90px; }
+  .sec h2 { margin: 0 0 12px; font-size: 17px; }
+  .sec .footnote { margin-top: 10px; }
+  .sec-banner { order: 1; }
+  .sec-loop   { order: 2; }
+  .sec-rates  { order: 3; }
+  .sec-econ   { order: 4; }
+  .sec-income { order: 5; }
+  .sec-totals { order: 6; }
+  .banner { margin: 0; }
+
+  /* rate cards: label left / figure right */
+  .rate-grid { grid-template-columns: 1fr; gap: 12px; }
+  .rate-card {
+    display: grid; grid-template-columns: 1fr auto;
+    grid-template-areas: "eb fig" "unit fig"; align-items: center; column-gap: 12px;
+  }
+  .rate-card .eyebrow { grid-area: eb; }
+  .rate-card .figure { grid-area: fig; margin: 0; font-size: 26px; }
+  .rate-card .unit { grid-area: unit; }
+
+  /* loop: vertical with down-arrows */
+  .flow-card { padding: 14px; }
+  .flow-grid { grid-template-columns: 1fr; gap: 0; }
+  .flow-arrow { transform: rotate(90deg); margin: 8px 0; }
+  .flow-node {
+    background: var(--input-bg); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 12px 14px; width: 100%;
+  }
+  .flow-node--single { flex-direction: row; align-items: center; gap: 12px; }
+  .flow-node--single .node-text { text-align: left; flex: 1; gap: 2px; }
+  .flow-node--single .logo-slot { width: 42px; height: 42px; flex-shrink: 0; }
+  .flow-node--single .fig { margin-left: auto; font-size: 13px; white-space: nowrap; }
+  .flow-node--cards { align-items: stretch; }
+  .flow-node--cards .eyebrow { text-align: left; }
+  .cards-list { gap: 0; align-items: stretch; }
+  .card-item {
+    flex-direction: row; align-items: center; gap: 12px; text-align: left;
+    padding: 12px 0; border-bottom: 1px solid var(--divider);
+  }
+  .card-item:first-child { padding-top: 2px; }
+  .card-item:last-child { border-bottom: none; }
+  .card-item .logo-slot { width: 42px; height: 42px; flex-shrink: 0; }
+  .card-item .fig { margin-left: auto; white-space: nowrap; }
+  .card-item .brand-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+  /* economics: table -> one card per brand */
+  .card-econ { display: none; }
+  .econ-cards { display: flex; flex-direction: column; gap: 14px; }
+
+  /* totals: 2x2 tiles + full-width accent net-profit card */
+  .totals { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .total-cell {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 14px;
+  }
+  .total-cell .lbl { margin-bottom: 6px; }
+  .total-cell .val { font-size: 19px; }
+  .total-cell:last-child { grid-column: 1 / -1; background: var(--accent); border-color: transparent; }
+  .total-cell:last-child .lbl { color: rgba(255,255,255,.82); }
+  .total-cell:last-child .val { color: #fff; font-size: 28px; }
+  .total-cell:last-child .roi-pill { background: rgba(255,255,255,.2); color: #fff; margin-top: 10px; }
 }

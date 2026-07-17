@@ -11,7 +11,24 @@
 </head>
 <body>
   <div class="app">
-    <!-- ============ SIDEBAR ============ -->
+    <!-- ============ MOBILE HEADER (sticky, < 900px only) ============ -->
+    <header class="m-header">
+      <span class="m-glyph">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </span>
+      <div class="m-titles">
+        <div class="m-title">CLP <span class="swap">↔</span> USD</div>
+        <div class="m-sub">Arbitrage Dashboard</div>
+      </div>
+      <div class="m-actions">
+        <button class="icon-btn" id="mThemeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
+        <button class="icon-btn" id="gearBtn" title="Parameters" aria-label="Parameters">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ SIDEBAR (desktop) / PARAMETERS SHEET (mobile) ============ -->
     <aside class="sidebar">
       <div class="side-head">
         <span class="tile">
@@ -60,10 +77,10 @@
 
     <!-- ============ MAIN ============ -->
     <main class="main">
+      <!-- desktop chrome (hidden < 900px) -->
       <div class="toolbar">
         <button class="theme-toggle" id="themeToggle"><span class="dot"></span><span id="themeLabel">Dark mode</span></button>
       </div>
-
       <div class="title-block">
         <span class="title-glyph">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -74,85 +91,102 @@
         </div>
       </div>
 
-      <!-- loop-flow strip -->
-      <div class="flow-card" id="flowCard">
-        <div class="flow-grid">
-          <div class="flow-node">
-            <div class="eyebrow" style="margin-bottom:12px">Step 1 · Card</div>
-            <div class="cards-list" id="flowCards"></div>
-          </div>
-          <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
-          <div class="flow-node">
-            <div class="logo-slot empty" id="logoSlotExch"><img id="logoExch" alt="" /></div>
-            <div class="eyebrow">Step 2 · Exchange</div>
-            <div class="brand" id="flowExchName">Buda</div>
-            <div class="fig mono" id="flowBudaFig">—</div>
-          </div>
-          <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
-          <div class="flow-node">
-            <div class="logo-slot empty" id="logoSlotSell"><img id="logoSell" alt="" /></div>
-            <div class="eyebrow">Step 3 · Sell</div>
-            <div class="brand" id="flowSellName">Robinhood</div>
-            <div class="fig mono" id="flowRhFig">—</div>
+      <!-- loop-flow -->
+      <section class="sec sec-loop">
+        <div class="flow-card" id="flowCard">
+          <div class="flow-grid">
+            <div class="flow-node flow-node--cards">
+              <div class="eyebrow" style="margin-bottom:12px">Step 1 · Card</div>
+              <div class="cards-list" id="flowCards"></div>
+            </div>
+            <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+            <div class="flow-node flow-node--single">
+              <div class="logo-slot empty" id="logoSlotExch"><img id="logoExch" alt="" /></div>
+              <div class="node-text">
+                <div class="eyebrow">Step 2 · Exchange</div>
+                <div class="brand" id="flowExchName">Buda</div>
+              </div>
+              <div class="fig mono" id="flowBudaFig">—</div>
+            </div>
+            <div class="flow-arrow"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+            <div class="flow-node flow-node--single">
+              <div class="logo-slot empty" id="logoSlotSell"><img id="logoSell" alt="" /></div>
+              <div class="node-text">
+                <div class="eyebrow">Step 3 · Sell</div>
+                <div class="brand" id="flowSellName">Robinhood</div>
+              </div>
+              <div class="fig mono" id="flowRhFig">—</div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- rate cards -->
-      <div class="rate-grid">
-        <div class="rate-card">
-          <div class="eyebrow"><span>Visa · Fidelity / Chase</span></div>
-          <div class="figure mono" id="visaFig">—</div>
-          <div class="unit mono">CLP / USD</div>
+      <section class="sec sec-rates">
+        <div class="rate-grid">
+          <div class="rate-card">
+            <div class="eyebrow"><span>Visa · Fidelity / Chase</span></div>
+            <div class="figure mono" id="visaFig">—</div>
+            <div class="unit mono">CLP / USD</div>
+          </div>
+          <div class="rate-card">
+            <div class="eyebrow"><span>Mastercard · CapitalOne</span></div>
+            <div class="figure mono" id="mcFig">—</div>
+            <div class="unit mono">CLP / USD</div>
+          </div>
+          <div class="rate-card">
+            <div class="eyebrow"><span>Buda · best ask</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+            <div class="figure mono" id="budaFig">—</div>
+            <div class="unit mono" id="budaUnit">CLP / USDC</div>
+          </div>
         </div>
-        <div class="rate-card">
-          <div class="eyebrow"><span>Mastercard · CapitalOne</span></div>
-          <div class="figure mono" id="mcFig">—</div>
-          <div class="unit mono">CLP / USD</div>
-        </div>
-        <div class="rate-card">
-          <div class="eyebrow"><span>Buda · best ask</span><span class="live"><span class="pulse"></span>LIVE</span></div>
-          <div class="figure mono" id="budaFig">—</div>
-          <div class="unit mono" id="budaUnit">CLP / USDC</div>
-        </div>
-      </div>
+      </section>
 
       <!-- banner -->
-      <div class="banner" id="banner">
-        <span class="badge" id="bannerBadge"></span>
-        <span class="msg" id="bannerMsg">Computing…</span>
-      </div>
+      <section class="sec sec-banner">
+        <div class="banner" id="banner">
+          <span class="badge" id="bannerBadge"></span>
+          <span class="msg" id="bannerMsg">Computing…</span>
+        </div>
+      </section>
 
       <!-- card economics -->
-      <h2>Card economics &amp; allocation</h2>
-      <div class="table-wrap scroll-x card-econ">
-        <table>
-          <thead>
-            <tr>
-              <th>Card</th><th>Network</th><th class="num">Cashback</th><th class="num">Cap (CLP)</th>
-              <th class="num">Cost/CLP (USD)</th><th class="num">→ Spend (CLP)</th>
-              <th class="num">USDC bought</th><th class="num">Cashback (USD)</th><th class="num">Profit (USD)</th>
-            </tr>
-          </thead>
-          <tbody id="econBody"></tbody>
-        </table>
-      </div>
-      <div class="footnote">Cards are ranked by effective cost per CLP (lower = used first). The optimizer walks Buda's live order book, so each extra CLP buys USDC at a slightly worse price (slippage).</div>
+      <section class="sec sec-econ">
+        <h2>Card economics &amp; allocation</h2>
+        <div class="table-wrap scroll-x card-econ">
+          <table>
+            <thead>
+              <tr>
+                <th>Card</th><th>Network</th><th class="num">Cashback</th><th class="num">Cap (CLP)</th>
+                <th class="num">Cost/CLP (USD)</th><th class="num">→ Spend (CLP)</th>
+                <th class="num">USDC bought</th><th class="num">Cashback (USD)</th><th class="num">Profit (USD)</th>
+              </tr>
+            </thead>
+            <tbody id="econBody"></tbody>
+          </table>
+        </div>
+        <div class="econ-cards" id="econCards"></div>
+        <div class="footnote">Cards are ranked by effective cost per CLP (lower = used first). The optimizer walks Buda's live order book, so each extra CLP buys USDC at a slightly worse price (slippage).</div>
+      </section>
 
       <!-- income breakdown -->
-      <h2>Income breakdown</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Income source</th><th class="num">USD</th></tr></thead>
-          <tbody id="incomeBody"></tbody>
-        </table>
-      </div>
-      <div class="footnote" id="incomeNote"></div>
+      <section class="sec sec-income">
+        <h2>Income breakdown</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Income source</th><th class="num">USD</th></tr></thead>
+            <tbody id="incomeBody"></tbody>
+          </table>
+        </div>
+        <div class="footnote" id="incomeNote"></div>
+      </section>
 
       <!-- loop totals -->
-      <h2>Loop totals</h2>
-      <div class="totals" id="totals"></div>
-      <div class="footnote mono" id="budaEffNote"></div>
+      <section class="sec sec-totals">
+        <h2>Loop totals</h2>
+        <div class="totals" id="totals"></div>
+        <div class="footnote mono" id="budaEffNote"></div>
+      </section>
     </main>
   </div>
 
