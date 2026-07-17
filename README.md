@@ -1,5 +1,7 @@
 # CLP ↔ USD Arbitrage Dashboard
 
+**🔴 Live:** https://web-production-cae25.up.railway.app/
+
 Live dashboard for the loop:
 
 **charge US credit card (USD→CLP via Visa/MC) → buy USDC on Buda → transfer to
@@ -40,7 +42,8 @@ Logos: drop PNGs into `web/logos/` (`fidelity.png`, `capitalone.png`, `chase.png
 to a placeholder — no errors.
 
 ## Deploy on Railway
-This repo is Railway-ready (Nixpacks):
+Deployed at **https://web-production-cae25.up.railway.app/**. This repo is
+Railway-ready (Nixpacks):
 - `Procfile` → `gunicorn server:app --bind 0.0.0.0:$PORT`
 - `.python-version` pins Python 3.12
 - `requirements.txt` lists only the runtime deps
