@@ -97,6 +97,31 @@ pointed at **config-as-code path `railway.cron.json`**, which supplies its start
 command and the 10-minute schedule. Each cron tick spins up a container, writes one
 row, and exits.
 
+## Telegram alerts (ROI > 2%)
+`collect.py` also runs the optimizer on the **base scenario** (5,000,000 CLP,
+0.30% Buda fee, 1.0 peg) each tick and alerts when ROI clears the threshold.
+
+**Telegram cannot text a phone number.** The Bot API sends to a `chat_id` and the
+recipient must message the bot first (anti-spam by design); the Gateway API does
+target phone numbers but is limited to verification codes. So alerts arrive as a
+Telegram push notification on your phone.
+
+Setup:
+1. Message **@BotFather** -> `/newbot` -> copy the token
+2. Message your new bot (e.g. `/start`) so it's allowed to reply
+3. `TELEGRAM_BOT_TOKEN=... python notify.py --chat-id` to find your id
+4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on the `collector` service
+5. `python notify.py --test` sends a test message
+
+`ALERT_ROI_THRESHOLD` overrides the default `2.0` (percent).
+
+**Edge-triggered:** fires once when ROI crosses from below the threshold to above,
+then stays silent until it drops back under and crosses again — so a window that
+stays open for hours buzzes once, not every 10 minutes. The latch is a single-row
+`alert_state` table (not a history table), so it survives container restarts. If
+the Telegram env vars are unset the alert is skipped cleanly and the snapshot is
+still recorded.
+
 ## Legacy
 `app.py` is the original Streamlit prototype (needs `streamlit`, see the commented
 extras in `requirements.txt`). `explore_*.py` / `test_*.py` are dev scripts.
