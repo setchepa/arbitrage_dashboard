@@ -14,6 +14,16 @@ recompute instantly; the backend only supplies live market data. The layout is
 mobile layout (sticky header, collapsible parameters sheet, vertical loop, per-card
 economics, stacked totals) — one codebase, gated on `@media (max-width: 899px)`.
 
+Behind the dashboard a **cron service** captures the three rates to Postgres every
+10 minutes and **alerts over Telegram** when base-scenario ROI climbs past 2%
+(then every further 0.5%). Three pieces in one repo:
+
+| Piece | Entry point | Runs |
+|-------|-------------|------|
+| Dashboard | `server.py` + `web/` | always on (`web` service) |
+| Rate capture | `collect.py` → `db.py` | every 10 min (`collector` cron) |
+| Alerts | `collect.py` → `notify.py` | same tick, when ROI enters a new band |
+
 ## Sources (no official API keys — the pages' own backends)
 | File | Source | Access method |
 |------|--------|---------------|
@@ -97,44 +107,97 @@ pointed at **config-as-code path `railway.cron.json`**, which supplies its start
 command and the 10-minute schedule. Each cron tick spins up a container, writes one
 row, and exits.
 
-## Telegram alerts (ROI > 2%)
-`collect.py` also runs the optimizer on the **base scenario** (5,000,000 CLP,
-0.30% Buda fee, 1.0 peg) each tick and alerts when ROI clears the threshold.
+## Telegram alerts (ROI ≥ 2%)
+Each 10-minute tick, `collect.py` also runs the optimizer on the **base scenario**
+(5,000,000 CLP, 0.30% Buda fee, 1.0 peg) and sends a Telegram alert when ROI
+climbs through the alert ladder.
 
-**Telegram cannot text a phone number.** The Bot API sends to a `chat_id` and the
-recipient must message the bot first (anti-spam by design); the Gateway API does
-target phone numbers but is limited to verification codes. So alerts arrive as a
-Telegram push notification on your phone.
+| File | Purpose |
+|------|---------|
+| `notify.py` | Telegram Bot API client (stdlib only, no dependency) + `--chat-id` / `--test` helpers |
+| `collect.py` | Computes base-scenario ROI, decides the band, sends the alert |
+| `db.py` | `alert_state` single-row table holding `last_band` |
 
-Setup:
-1. Message **@BotFather** -> `/newbot` -> copy the token
-2. Message your new bot (e.g. `/start`) so it's allowed to reply
-3. `TELEGRAM_BOT_TOKEN=... python notify.py --chat-id` to find your id
-4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on the `collector` service
-5. `python notify.py --test` sends a test message
+### Telegram cannot text a phone number
+This is a hard API limitation, not a workaround problem:
 
-`ALERT_ROI_THRESHOLD` overrides the default `2.0` (percent).
+- The **Bot API** sends to a `chat_id`, and the recipient must message the bot
+  first — bots cannot cold-message anyone (anti-spam by design).
+- The **Gateway API** *does* target phone numbers but is restricted to
+  verification codes, so it cannot carry alerts.
 
-**Stepped alerting.** ROI is bucketed into `ALERT_ROI_STEP` (default 0.5%) bands
-above the threshold, and an alert fires only on entering a *new, higher* band:
+Alerts therefore arrive as a Telegram push notification on your phone, which is
+functionally equivalent.
+
+### Setup
+1. Message **@BotFather** → `/newbot` → copy the token
+2. Message your new bot (e.g. `/start`) so it's allowed to reply to you
+3. `TELEGRAM_BOT_TOKEN=... python notify.py --chat-id` to discover your chat id
+4. Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` on the **`collector`** service
+5. `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... python notify.py --test`
+
+Secrets live only in Railway service variables — never in this repo.
+
+### Environment variables
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `TELEGRAM_BOT_TOKEN` | — | BotFather token. Absent ⇒ alerting silently disabled |
+| `TELEGRAM_CHAT_ID` | — | Target chat. Absent ⇒ alerting silently disabled |
+| `ALERT_ROI_THRESHOLD` | `2.0` | ROI % at which the ladder starts |
+| `ALERT_ROI_STEP` | `0.5` | ROI % increment between alerts |
+
+### Stepped alerting
+ROI is bucketed into `ALERT_ROI_STEP` bands above the threshold; an alert fires
+only on entering a **new, higher** band:
 
 | ROI | Band | Behaviour |
 |-----|------|-----------|
-| ≤ 2.0% | — | quiet; re-arms the ladder |
+| ≤ 2.0% | `NULL` | quiet; re-arms the ladder |
 | 2.0–2.5% | 0 | alert once at the **2.0%** level |
 | 2.5–3.0% | 1 | alert once at the **2.5%** level |
 | 3.0–3.5% | 2 | alert once at the **3.0%** level |
 
-So a window climbing 2.1 → 2.3 → 2.6 → 3.1% sends three alerts (2.0, 2.5, 3.0),
-not twenty. Only the *highest* band reached is remembered, so a dip back to 2.8%
-after alerting at 3.0% stays quiet — no flapping. Dropping to/below 2.0% re-arms
-the whole ladder. A jump straight from 1.9% to 4.7% sends one alert, at the 4.5%
-level.
+Consequences worth knowing:
 
-State is a single-row `alert_state` table holding `last_band` (not a history
-table), so it survives container restarts. If the Telegram env vars are unset the
-alert is skipped cleanly and the snapshot is still recorded; a transient send
-failure leaves the band unchanged so the next tick retries.
+- A window climbing 2.1 → 2.3 → 2.6 → 3.1% sends **three** alerts (2.0, 2.5, 3.0),
+  not one per tick.
+- Only the *highest* band reached is remembered, so a dip to 2.8% after alerting
+  at 3.0% stays quiet — no flapping. The next alert would be at 3.5%.
+- Falling to/below the threshold re-arms the whole ladder.
+- A jump straight from 1.9% to 4.7% sends **one** alert, at the 4.5% level — not
+  one message per level crossed.
+
+State is the single-row `alert_state` table (`last_band`, `last_alert_at`) — not a
+history table — so it survives container restarts. If the Telegram vars are unset
+the alert is skipped cleanly and the snapshot is still recorded. A transient send
+failure leaves the band unchanged so the next tick retries rather than silently
+skipping a step.
+
+### Message format
+```
+🚨 Arbitrage window — 2.5%+
+
+ROI 2.634%  (crossed the 2.5% level)
+Profit $142.10 on 5,000,000 CLP
+
+Visa 934.92 · MC 923.96 · Buda 936.26
+Cards: Fidelity 5,000,000 CLP
+
+https://web-production-cae25.up.railway.app/
+```
+
+### Operational gotchas
+- **Railway bakes env vars into a deployment.** Setting variables with
+  `--skip-deploys` leaves the running deployment untouched, so the next cron tick
+  still uses the old values. Trigger a redeploy (or set variables without that
+  flag) and confirm a new `SUCCESS` deployment before expecting new behaviour.
+- **`getUpdates` returns an empty list once updates are consumed or expire**
+  (they're kept ~24h). If `--chat-id` finds nothing even though you messaged the
+  bot, send a fresh message while long-polling:
+  `curl "https://api.telegram.org/bot<TOKEN>/getUpdates?timeout=30"`.
+  Also check `getWebhookInfo` — a registered webhook suppresses `getUpdates`
+  entirely.
+- Only one `getUpdates` consumer may run at a time; concurrent pollers conflict.
 
 ## Legacy
 `app.py` is the original Streamlit prototype (needs `streamlit`, see the commented
