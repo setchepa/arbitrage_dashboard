@@ -48,16 +48,18 @@ ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS visa_as_of;
 ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS mc_as_of;
 ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS buda_levels;
 
--- Single-row latch for edge-triggered ROI alerts. Not a history table: it only
--- remembers whether we were already above the threshold, so a persistent window
--- alerts once instead of every 10 minutes (and survives container restarts).
+-- Single-row latch for stepped ROI alerts. Not a history table: it remembers the
+-- highest 0.5% band already alerted (0 = 2.0%, 1 = 2.5%, 2 = 3.0%, ...), so a
+-- persistent window alerts once per new step instead of every 10 minutes, and
+-- the state survives container restarts. NULL = below threshold / re-armed.
 CREATE TABLE IF NOT EXISTS alert_state (
     id            SMALLINT PRIMARY KEY DEFAULT 1,
-    was_above     BOOLEAN     NOT NULL DEFAULT FALSE,
     last_alert_at TIMESTAMPTZ,
     CONSTRAINT alert_state_single_row CHECK (id = 1)
 );
-INSERT INTO alert_state (id, was_above) VALUES (1, FALSE) ON CONFLICT (id) DO NOTHING;
+INSERT INTO alert_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE alert_state ADD COLUMN IF NOT EXISTS last_band INTEGER;
+ALTER TABLE alert_state DROP COLUMN IF EXISTS was_above;
 """
 
 
@@ -108,30 +110,30 @@ def insert_snapshot(row, conn=None):
             c.close()
 
 
-def get_was_above(conn=None):
-    """Were we already above the ROI threshold on the previous run?"""
+def get_last_band(conn=None):
+    """Highest ROI band already alerted, or None if below threshold / re-armed."""
     own = conn is None
     c = connect() if own else conn
     try:
-        row = c.execute("SELECT was_above FROM alert_state WHERE id = 1").fetchone()
-        return bool(row[0]) if row else False
+        row = c.execute("SELECT last_band FROM alert_state WHERE id = 1").fetchone()
+        return row[0] if row else None
     finally:
         if own:
             c.close()
 
 
-def set_was_above(value, mark_alert=False, conn=None):
+def set_last_band(band, mark_alert=False, conn=None):
     """
-    Latch the above/below state. `mark_alert=True` also stamps last_alert_at,
-    which we do only when an alert was actually sent.
+    Store the highest alerted band (None re-arms). `mark_alert=True` also stamps
+    last_alert_at, which we do only when an alert was actually sent.
     """
-    sql = ("UPDATE alert_state SET was_above = %s"
+    sql = ("UPDATE alert_state SET last_band = %s"
            + (", last_alert_at = now()" if mark_alert else "")
            + " WHERE id = 1")
     own = conn is None
     c = connect() if own else conn
     try:
-        c.execute(sql, (bool(value),))
+        c.execute(sql, (band,))
         c.commit()
     finally:
         if own:

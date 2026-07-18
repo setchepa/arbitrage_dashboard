@@ -115,12 +115,26 @@ Setup:
 
 `ALERT_ROI_THRESHOLD` overrides the default `2.0` (percent).
 
-**Edge-triggered:** fires once when ROI crosses from below the threshold to above,
-then stays silent until it drops back under and crosses again — so a window that
-stays open for hours buzzes once, not every 10 minutes. The latch is a single-row
-`alert_state` table (not a history table), so it survives container restarts. If
-the Telegram env vars are unset the alert is skipped cleanly and the snapshot is
-still recorded.
+**Stepped alerting.** ROI is bucketed into `ALERT_ROI_STEP` (default 0.5%) bands
+above the threshold, and an alert fires only on entering a *new, higher* band:
+
+| ROI | Band | Behaviour |
+|-----|------|-----------|
+| ≤ 2.0% | — | quiet; re-arms the ladder |
+| 2.0–2.5% | 0 | alert once at the **2.0%** level |
+| 2.5–3.0% | 1 | alert once at the **2.5%** level |
+| 3.0–3.5% | 2 | alert once at the **3.0%** level |
+
+So a window climbing 2.1 → 2.3 → 2.6 → 3.1% sends three alerts (2.0, 2.5, 3.0),
+not twenty. Only the *highest* band reached is remembered, so a dip back to 2.8%
+after alerting at 3.0% stays quiet — no flapping. Dropping to/below 2.0% re-arms
+the whole ladder. A jump straight from 1.9% to 4.7% sends one alert, at the 4.5%
+level.
+
+State is a single-row `alert_state` table holding `last_band` (not a history
+table), so it survives container restarts. If the Telegram env vars are unset the
+alert is skipped cleanly and the snapshot is still recorded; a transient send
+failure leaves the band unchanged so the next tick retries.
 
 ## Legacy
 `app.py` is the original Streamlit prototype (needs `streamlit`, see the commented
