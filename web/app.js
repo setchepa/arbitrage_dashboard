@@ -5,12 +5,14 @@
    - recomputes instantly when any sidebar control changes
    ============================================================ */
 
-// ---- state (defaults per spec section 6) ----
+// ---- state ----
+// Base scenario: every new session starts here (budget 5,000,000 CLP, Buda fee
+// 0.30%, USDC->USD at the 1.0 peg -> sell venue reads Robinhood).
 const state = {
   theme: 'light',
-  budget: 10000000,
+  budget: 5000000,
   budaFee: 0.30,
-  usdcRate: 1.0100,
+  usdcRate: 1.0,
   openCard: null,
   showFlow: true,
   paramsOpen: false,  // mobile-only: parameters sheet open?
