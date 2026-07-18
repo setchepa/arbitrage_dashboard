@@ -61,6 +61,31 @@ block Railway's datacenter IPs more aggressively than a residential IP. If
 through a residential/proxy egress — the app already serves the last good data
 (flagged `stale`) when a live fetch fails.
 
+## Rate history (Postgres, every 10 minutes)
+`collect.py` captures the three live datapoints and appends one row to Postgres.
+It's a one-shot script run on a schedule — no long-lived process.
+
+| File | Purpose |
+|------|---------|
+| `db.py` | `DATABASE_URL` connection, idempotent schema bootstrap, insert/query helpers |
+| `collect.py` | Fetch the 3 rates → insert one row. Exits non-zero on failure |
+| `railway.cron.json` | Cron service config: `python collect.py`, `*/10 * * * *`, restart `NEVER` |
+
+Table `rate_snapshots`: `captured_at` (timestamptz), `visa_fx`, `visa_as_of`,
+`mc_fx`, `mc_as_of`, `buda_best_ask`, `buda_levels`, plus a `captured_at DESC` index.
+Schema is created on first run, so there's no migration step.
+
+Run it by hand:
+```bash
+DATABASE_URL=postgresql://... ./venv/bin/python collect.py
+```
+
+**Railway setup** — the project has three services: `web`, `Postgres`, `collector`.
+The `collector` service has `DATABASE_URL=${{Postgres.DATABASE_URL}}` and must be
+pointed at **config-as-code path `railway.cron.json`**, which supplies its start
+command and the 10-minute schedule. Each cron tick spins up a container, writes one
+row, and exits.
+
 ## Legacy
 `app.py` is the original Streamlit prototype (needs `streamlit`, see the commented
 extras in `requirements.txt`). `explore_*.py` / `test_*.py` are dev scripts.
