@@ -71,9 +71,11 @@ It's a one-shot script run on a schedule — no long-lived process.
 | `collect.py` | Fetch the 3 rates → insert one row. Exits non-zero on failure |
 | `railway.cron.json` | Cron service config: `python collect.py`, `*/10 * * * *`, restart `NEVER` |
 
-Table `rate_snapshots`: `captured_at` (timestamptz), `visa_fx`, `visa_as_of`,
-`mc_fx`, `mc_as_of`, `buda_best_ask`, `buda_levels`, plus a `captured_at DESC` index.
-Schema is created on first run, so there's no migration step.
+Table `rate_snapshots`: `captured_at` (timestamptz), then the three rate columns
+**`visa`, `mc`, `buda`** — all `NUMERIC(12,2)`, numbers only to 2 decimals —
+plus context (`visa_as_of`, `mc_as_of`, `buda_levels`) and a `captured_at DESC`
+index. Schema is created on first run and `init_schema()` carries an idempotent
+migration, so existing databases are upgraded automatically.
 
 Run it by hand:
 ```bash

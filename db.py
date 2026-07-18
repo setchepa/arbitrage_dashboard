@@ -13,16 +13,38 @@ import psycopg
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rate_snapshots (
     id             BIGSERIAL PRIMARY KEY,
-    captured_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    visa_fx        NUMERIC(14,6) NOT NULL,   -- CLP per USD (Visa)
+    captured_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    visa           NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Visa)
+    mc             NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Mastercard)
+    buda           NUMERIC(12,2) NOT NULL,   -- CLP per USDC (Buda best ask)
     visa_as_of     TEXT,
-    mc_fx          NUMERIC(14,6) NOT NULL,   -- CLP per USD (Mastercard)
     mc_as_of       TEXT,
-    buda_best_ask  NUMERIC(14,4) NOT NULL,   -- CLP per USDC (best ask)
     buda_levels    INTEGER                   -- order-book depth at capture time
 );
 CREATE INDEX IF NOT EXISTS idx_rate_snapshots_captured_at
     ON rate_snapshots (captured_at DESC);
+
+-- Idempotent migration: an earlier version used visa_fx / mc_fx / buda_best_ask
+-- with 4-6 decimals. Rename to visa / mc / buda and force 2 decimals.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'rate_snapshots' AND column_name = 'visa_fx') THEN
+        ALTER TABLE rate_snapshots RENAME COLUMN visa_fx TO visa;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'rate_snapshots' AND column_name = 'mc_fx') THEN
+        ALTER TABLE rate_snapshots RENAME COLUMN mc_fx TO mc;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'rate_snapshots' AND column_name = 'buda_best_ask') THEN
+        ALTER TABLE rate_snapshots RENAME COLUMN buda_best_ask TO buda;
+    END IF;
+END $$;
+
+ALTER TABLE rate_snapshots ALTER COLUMN visa TYPE NUMERIC(12,2);
+ALTER TABLE rate_snapshots ALTER COLUMN mc   TYPE NUMERIC(12,2);
+ALTER TABLE rate_snapshots ALTER COLUMN buda TYPE NUMERIC(12,2);
 """
 
 
@@ -53,14 +75,14 @@ def init_schema(conn=None):
 
 def insert_snapshot(row, conn=None):
     """
-    row: dict with visa_fx, visa_as_of, mc_fx, mc_as_of, buda_best_ask, buda_levels.
+    row: dict with visa, mc, buda, visa_as_of, mc_as_of, buda_levels.
     Returns the new row's id and captured_at.
     """
     sql = """
         INSERT INTO rate_snapshots
-            (visa_fx, visa_as_of, mc_fx, mc_as_of, buda_best_ask, buda_levels)
-        VALUES (%(visa_fx)s, %(visa_as_of)s, %(mc_fx)s, %(mc_as_of)s,
-                %(buda_best_ask)s, %(buda_levels)s)
+            (visa, mc, buda, visa_as_of, mc_as_of, buda_levels)
+        VALUES (%(visa)s, %(mc)s, %(buda)s, %(visa_as_of)s, %(mc_as_of)s,
+                %(buda_levels)s)
         RETURNING id, captured_at;
     """
     own = conn is None
@@ -78,7 +100,7 @@ def insert_snapshot(row, conn=None):
 def latest(limit=20):
     """Most recent snapshots, newest first — handy for a quick sanity check."""
     sql = """
-        SELECT captured_at, visa_fx, mc_fx, buda_best_ask, buda_levels
+        SELECT captured_at, visa, mc, buda, buda_levels
         FROM rate_snapshots ORDER BY captured_at DESC LIMIT %s;
     """
     with connect() as c:

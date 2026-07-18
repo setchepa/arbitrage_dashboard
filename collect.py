@@ -28,12 +28,14 @@ def collect_once():
     mc = get_mastercard_rate("CLP", "USD", 1, 0)
     asks = get_buda_asks()
 
+    # Stored to 2 decimals (the NUMERIC(12,2) columns enforce it; we round here
+    # too so the logged line matches exactly what lands in the table).
     row = {
-        "visa_fx": visa["reverse_rate"],       # CLP per USD
+        "visa": round(visa["reverse_rate"], 2),   # CLP per USD
+        "mc": round(mc["reverse_rate"], 2),       # CLP per USD
+        "buda": round(asks[0][0], 2),             # CLP per USDC
         "visa_as_of": visa["as_of_date"],
-        "mc_fx": mc["reverse_rate"],           # CLP per USD
         "mc_as_of": mc["as_of_date"],
-        "buda_best_ask": asks[0][0],           # CLP per USDC
         "buda_levels": len(asks),
     }
 
@@ -43,8 +45,8 @@ def collect_once():
 
     print(
         f"[{captured_at:%Y-%m-%d %H:%M:%S %Z}] snapshot #{new_id} — "
-        f"Visa {row['visa_fx']:.4f} | MC {row['mc_fx']:.4f} | "
-        f"Buda {row['buda_best_ask']:.2f} ({row['buda_levels']} levels)"
+        f"Visa {row['visa']:.2f} | MC {row['mc']:.2f} | "
+        f"Buda {row['buda']:.2f} ({row['buda_levels']} levels)"
     )
     return new_id
 
