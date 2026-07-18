@@ -16,10 +16,7 @@ CREATE TABLE IF NOT EXISTS rate_snapshots (
     captured_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
     visa           NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Visa)
     mc             NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Mastercard)
-    buda           NUMERIC(12,2) NOT NULL,   -- CLP per USDC (Buda best ask)
-    visa_as_of     TEXT,
-    mc_as_of       TEXT,
-    buda_levels    INTEGER                   -- order-book depth at capture time
+    buda           NUMERIC(12,2) NOT NULL    -- CLP per USDC (Buda best ask)
 );
 CREATE INDEX IF NOT EXISTS idx_rate_snapshots_captured_at
     ON rate_snapshots (captured_at DESC);
@@ -45,6 +42,11 @@ END $$;
 ALTER TABLE rate_snapshots ALTER COLUMN visa TYPE NUMERIC(12,2);
 ALTER TABLE rate_snapshots ALTER COLUMN mc   TYPE NUMERIC(12,2);
 ALTER TABLE rate_snapshots ALTER COLUMN buda TYPE NUMERIC(12,2);
+
+-- Numbers only: drop the non-numeric context columns kept by earlier versions.
+ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS visa_as_of;
+ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS mc_as_of;
+ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS buda_levels;
 """
 
 
@@ -75,14 +77,12 @@ def init_schema(conn=None):
 
 def insert_snapshot(row, conn=None):
     """
-    row: dict with visa, mc, buda, visa_as_of, mc_as_of, buda_levels.
+    row: dict with visa, mc, buda.
     Returns the new row's id and captured_at.
     """
     sql = """
-        INSERT INTO rate_snapshots
-            (visa, mc, buda, visa_as_of, mc_as_of, buda_levels)
-        VALUES (%(visa)s, %(mc)s, %(buda)s, %(visa_as_of)s, %(mc_as_of)s,
-                %(buda_levels)s)
+        INSERT INTO rate_snapshots (visa, mc, buda)
+        VALUES (%(visa)s, %(mc)s, %(buda)s)
         RETURNING id, captured_at;
     """
     own = conn is None
@@ -100,7 +100,7 @@ def insert_snapshot(row, conn=None):
 def latest(limit=20):
     """Most recent snapshots, newest first — handy for a quick sanity check."""
     sql = """
-        SELECT captured_at, visa, mc, buda, buda_levels
+        SELECT captured_at, visa, mc, buda
         FROM rate_snapshots ORDER BY captured_at DESC LIMIT %s;
     """
     with connect() as c:
