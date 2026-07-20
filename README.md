@@ -71,6 +71,28 @@ block Railway's datacenter IPs more aggressively than a residential IP. If
 through a residential/proxy egress — the app already serves the last good data
 (flagged `stale`) when a live fetch fails.
 
+## Live data (no refresh button)
+The page updates itself — there is no manual refresh. The three sources have very
+different refresh characteristics, so they're polled differently:
+
+| Source | Changes | Endpoint | Cadence |
+|--------|---------|----------|---------|
+| Buda order book | continuously (live market) | `/api/buda` | client polls **every 1s** |
+| Visa / Mastercard | **once a day** (daily published FX) | `/api/rates` | on load, then every 10 min |
+
+Polling the card networks per second would be pointless (the rate is a daily
+figure) and would invite Cloudflare/Akamai rate-limiting — the real risk from a
+datacenter IP. Only Buda actually moves, and it drives the VWAP, ROI and profit.
+
+Latency: `buda_rate.py` keeps one long-lived cloudscraper session, which cuts an
+order-book fetch from ~740ms to **~330ms**. `/api/buda` caches for 0.5s, so N
+concurrent viewers still produce at most ~2 req/s to Buda rather than N. Polling
+pauses while the browser tab is hidden and catches up on re-focus.
+
+Rendering note: `render()` runs every second, so the Step-1 card block is only
+rebuilt when the allocation actually changes — otherwise recreating its `<img>`
+tags each tick makes the logos flicker back to their placeholder.
+
 ## Rate history (Postgres, every 10 minutes)
 `collect.py` captures the three live datapoints and appends one row to Postgres.
 It's a one-shot script run on a schedule — no long-lived process.

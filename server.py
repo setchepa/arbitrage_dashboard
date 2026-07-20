@@ -57,6 +57,38 @@ def healthz():
     return jsonify({"ok": True})
 
 
+# Buda is the only source that moves intraday (Visa/Mastercard publish daily
+# rates), so it gets its own lightweight endpoint the page can poll ~1/second.
+# The short server-side cache means N concurrent viewers still produce at most
+# ~2 requests/second to Buda, not N.
+BUDA_CACHE_TTL = 0.5  # seconds
+_buda_cache = {"data": None, "ts": 0.0}
+
+
+@app.route("/api/buda")
+def api_buda():
+    now = time.time()
+    if _buda_cache["data"] and (now - _buda_cache["ts"]) < BUDA_CACHE_TTL:
+        return jsonify(_buda_cache["data"])
+    try:
+        asks = get_buda_asks()
+        payload = {
+            "ok": True,
+            "buda_best_ask": asks[0][0],
+            "buda_levels": len(asks),
+            "buda_asks": asks,
+        }
+        _buda_cache["data"] = payload
+        _buda_cache["ts"] = now
+        return jsonify(payload)
+    except Exception as e:
+        if _buda_cache["data"]:
+            stale = dict(_buda_cache["data"])
+            stale["stale"] = True
+            return jsonify(stale)
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
 @app.route("/api/rates")
 def api_rates():
     force = request.args.get("force")

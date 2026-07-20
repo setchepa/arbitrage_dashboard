@@ -24,6 +24,7 @@ const state = {
 };
 
 let market = null; // { visa_fx, mc_fx, buda_best_ask, buda_asks, ... }
+let flowCardsSig = null; // guards the Step-1 rebuild so logos don't flicker
 
 // ---- logos (drop matching PNGs into web/logos/; missing files fall back to
 //      the empty "logo" placeholder automatically) ----
@@ -180,7 +181,15 @@ function render() {
   // once the budget exceeds Fidelity's cap), each with its own logo + spend.
   const usedCards = r.rows.filter((x) => x.clp > 0)
     .sort((a, b) => (b.clp - a.clp) || (a.costCoeff - b.costCoeff));
-  $('flowCards').innerHTML = usedCards.length
+
+  // render() runs every second for live data. Rebuilding this block's innerHTML
+  // would recreate the <img> tags each tick, so the logos would visibly flicker
+  // back to their placeholder while reloading. Only rebuild when the allocation
+  // actually changes.
+  const cardsSig = usedCards.map((c) => `${c.name}:${Math.round(c.clp)}`).join('|') || 'none';
+  if (cardsSig !== flowCardsSig) {
+    flowCardsSig = cardsSig;
+    $('flowCards').innerHTML = usedCards.length
     ? usedCards.map((c) => {
       const src = CARD_LOGOS[c.name];
       const img = src
@@ -199,6 +208,7 @@ function render() {
           <div class="brand">Unprofitable</div>
           <div class="fig mono">${DASH}</div>
         </div>`;
+  }
 
   $('flowExchName').textContent = EXCHANGE.name;
   // Step 2 shows no rate — the Buda VWAP lives in its own rate card.
@@ -395,30 +405,61 @@ $('gearBtn').addEventListener('click', () => {
   document.querySelector('.app').classList.toggle('params-open', state.paramsOpen);
 });
 
-// ---- fetch live rates ----
-async function fetchRates(force = false) {
-  const btn = $('refreshBtn');
-  btn.disabled = true; btn.classList.add('spin');
+// ============================================================
+//  LIVE DATA
+//  Buda is the only source that moves intraday, so it's polled ~1/second.
+//  Visa/Mastercard publish daily rates — polling those per second would be
+//  pointless and would get us rate-limited by Cloudflare/Akamai, so they're
+//  refreshed on load and then every CARD_RATE_INTERVAL.
+// ============================================================
+const BUDA_POLL_MS = 1000;
+const CARD_RATE_INTERVAL_MS = 10 * 60 * 1000;   // 10 min
+
+let liveTimer = null;
+
+async function fetchRates() {
   try {
-    const res = await fetch('/api/rates' + (force ? '?force=1' : ''));
+    const res = await fetch('/api/rates');
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'fetch failed');
     market = data;
     render();
   } catch (e) {
-    $('bannerMsg').textContent = 'Failed to fetch live rates: ' + e.message;
-    $('banner').className = 'banner bad';
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => btn.classList.remove('spin'), 650);
+    if (!market) {            // only surface if we have nothing to show
+      $('bannerMsg').textContent = 'Failed to fetch live rates: ' + e.message;
+      $('banner').className = 'banner bad';
+    }
   }
 }
-$('refreshBtn').addEventListener('click', () => fetchRates(true));
+
+async function pollBuda() {
+  if (!market) return;                       // wait for the first full load
+  if (document.hidden) return;               // don't poll a background tab
+  try {
+    const res = await fetch('/api/buda');
+    const data = await res.json();
+    if (!data.ok) return;                    // keep last good data on failure
+    market.buda_asks = data.buda_asks;
+    market.buda_best_ask = data.buda_best_ask;
+    market.buda_levels = data.buda_levels;
+    render();
+  } catch (e) {
+    /* transient — keep showing the last good values */
+  }
+}
+
+function startLive() {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(pollBuda, BUDA_POLL_MS);
+  setInterval(fetchRates, CARD_RATE_INTERVAL_MS);
+  // Catch up immediately when the tab becomes visible again.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollBuda(); });
+}
 
 // ---- init ----
 applyTheme();
 syncFields();
 buildAccordion();
 bindInputs();
-fetchRates();
+fetchRates().then(startLive);
 

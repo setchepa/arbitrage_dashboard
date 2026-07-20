@@ -23,10 +23,29 @@ BUDA_BOOK_URL = "https://www.buda.com/api/v2/markets/usdc-clp/order_book"
 MANUAL_FEE_PCT = 0.3  # removed from Monto per project spec
 
 
-def _scraper():
+# A single long-lived scraper is reused across calls: creating one costs ~400ms
+# (Cloudflare handshake), while reusing it drops an order-book fetch to ~330ms.
+# That's what makes sub-second live polling viable.
+_SESSION = None
+
+
+def _new_scraper():
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "darwin", "mobile": False}
     )
+
+
+def _scraper():
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = _new_scraper()
+    return _SESSION
+
+
+def _reset_scraper():
+    """Drop the cached session so the next call rebuilds it (cookie expiry)."""
+    global _SESSION
+    _SESSION = None
 
 
 def get_buda_asks():
@@ -35,8 +54,14 @@ def get_buda_asks():
     (price_clp_per_usdc, size_usdc) tuples, sorted best (lowest) price first.
     Used by the optimizer to model slippage when buying USDC with CLP.
     """
-    resp = _scraper().get(BUDA_BOOK_URL, timeout=40)
-    resp.raise_for_status()
+    try:
+        resp = _scraper().get(BUDA_BOOK_URL, timeout=20)
+        resp.raise_for_status()
+    except Exception:
+        # Session may have gone stale (Cloudflare cookie expiry) — rebuild once.
+        _reset_scraper()
+        resp = _scraper().get(BUDA_BOOK_URL, timeout=20)
+        resp.raise_for_status()
     asks = resp.json()["order_book"]["asks"]
     return [(float(p), float(s)) for p, s in asks]
 
