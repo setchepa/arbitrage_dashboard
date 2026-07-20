@@ -130,6 +130,30 @@ function optimize() {
   };
 }
 
+/**
+ * Volume-weighted average price for buying `clpAmount` of CLP on Buda, walking
+ * the live ask book and applying the Buda fee — i.e. the average CLP/USDC you'd
+ * actually pay for that size, not the top-of-book quote.
+ *
+ * When the optimizer deploys the whole budget (the usual case) this equals
+ * `budaEff` (= CLP spent / USDC bought), which is what the income breakdown
+ * shows. It's used as the rate-card fallback when nothing is deployed, so the
+ * card still shows a live number instead of a dash.
+ */
+function vwapForBudget(clpAmount) {
+  if (!market || !(clpAmount > 0)) return null;
+  const feeMult = 1 - state.budaFee / 100;
+  let left = clpAmount, usdc = 0;
+  for (const [price, size] of market.buda_asks) {
+    if (left <= 1e-9) break;
+    const take = Math.min(price * size, left);
+    usdc += (take / price) * feeMult;
+    left -= take;
+  }
+  const spent = clpAmount - left;
+  return usdc > 1e-9 ? spent / usdc : null;
+}
+
 // ============================================================
 //  RENDER
 // ============================================================
@@ -140,7 +164,10 @@ function render() {
   if (market) {
     $('visaFig').textContent = rate(market.visa_fx);
     $('mcFig').textContent = rate(market.mc_fx);
-    $('budaFig').textContent = rate(market.buda_best_ask);
+    // VWAP for the deployed size — the same figure the income breakdown shows.
+    // Falls back to the VWAP over the full budget when nothing is deployed.
+    const vwap = (r && r.budaEff) || vwapForBudget(state.budget);
+    $('budaFig').textContent = vwap ? rate(vwap) : DASH;
     $('budaUnit').textContent = `CLP / USDC · ${market.buda_levels} levels`;
     $('asOf').innerHTML = `Visa as of ${market.visa_date} · Mastercard as of ${market.mc_date}`;
   }
@@ -174,9 +201,7 @@ function render() {
         </div>`;
 
   $('flowExchName').textContent = EXCHANGE.name;
-  // Show the same figure as the "Buda · best ask" rate card. (The slippage-
-  // adjusted average actually paid is reported in the Loop totals footnote.)
-  $('flowBudaFig').textContent = `${rate(market.buda_best_ask)} CLP/USDC`;
+  // Step 2 shows no rate — the Buda VWAP lives in its own rate card.
   $('flowRhFig').textContent = `@ $${rate(state.usdcRate, 4)}`;
   // sell venue depends on the peg (Robinhood @ exactly $1, else Binance)
   const venue = sellVenue();
@@ -274,7 +299,7 @@ function render() {
     </div>`).join('');
 
   $('budaEffNote').textContent = r.budaEff
-    ? `Effective Buda purchase rate for this size: ${rate(r.budaEff)} CLP/USDC (best ask ${rate(market.buda_best_ask)}).`
+    ? `Buda VWAP for ${clp(r.totals.clp)} CLP: ${rate(r.budaEff)} CLP/USDC — the average paid walking the order book (top-of-book ask ${rate(market.buda_best_ask)}).`
     : '';
 }
 
