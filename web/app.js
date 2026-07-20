@@ -174,7 +174,9 @@ function render() {
         </div>`;
 
   $('flowExchName').textContent = EXCHANGE.name;
-  $('flowBudaFig').textContent = r.budaEff ? `${rate(r.budaEff)} CLP/USDC` : `${rate(market.buda_best_ask)} CLP/USDC`;
+  // Show the same figure as the "Buda · best ask" rate card. (The slippage-
+  // adjusted average actually paid is reported in the Loop totals footnote.)
+  $('flowBudaFig').textContent = `${rate(market.buda_best_ask)} CLP/USDC`;
   $('flowRhFig').textContent = `@ $${rate(state.usdcRate, 4)}`;
   // sell venue depends on the peg (Robinhood @ exactly $1, else Binance)
   const venue = sellVenue();
@@ -244,7 +246,9 @@ function render() {
 
   // income breakdown
   const premClass = r.premium > 0 ? 'pos' : (r.premium < 0 ? 'neg' : '');
+  const usdcQty = r.totals.usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   $('incomeBody').innerHTML = `
+    <tr><td>Buy USDC on ${EXCHANGE.name} — ${clp(r.totals.clp)} CLP${r.budaEff ? ` @ ${rate(r.budaEff)}` : ''}</td><td class="num mute">${usdcQty} USDC</td></tr>
     <tr><td>Sell USDC on ${venue.name} @ $1.00 (base)</td><td class="num">${usd(r.base)}</td></tr>
     <tr><td>USDC premium (USDC @ $${rate(state.usdcRate, 4)} vs $1.00)</td><td class="num ${premClass}">${usd(r.premium)}</td></tr>
     <tr><td>Credit-card cashback</td><td class="num pos">${usd(r.totals.cashback)}</td></tr>
