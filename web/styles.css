@@ -257,7 +257,6 @@ h2 { font-size: 19px; font-weight: 600; margin: 30px 0 14px; }
 }
 .table-wrap.scroll-x { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-.card-econ table { min-width: 820px; }
 thead th {
   background: var(--head-bg); text-align: left; padding: var(--table-pad);
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
@@ -307,31 +306,6 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
 /* node-text wrapper (keeps eyebrow+brand grouped; identical on desktop) */
 .node-text { display: flex; flex-direction: column; gap: 6px; text-align: center; }
 
-/* ---- Economics cards (mobile only) ---- */
-.econ-cards { display: none; }
-.econ-card {
-  background: var(--card); border: 1px solid var(--card-border);
-  border-radius: 14px; padding: 14px 16px;
-}
-.econ-card.unused { opacity: .72; }
-.econ-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
-.econ-card-head .brand-dot { width: 8px; height: 8px; border-radius: 2px; }
-.econ-card-head .ec-name { font-weight: 600; font-size: 14px; }
-.econ-card-head .ec-net { color: var(--text-mute); font-size: 12px; }
-.econ-card-head .cb-pill {
-  margin-left: auto; padding: 3px 9px; border-radius: 999px;
-  background: var(--pos-soft); color: var(--pos-ink);
-  font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;
-  font-size: 11.5px; font-weight: 600;
-}
-.econ-card.unused .cb-pill { background: var(--head-bg); color: var(--text-mute); }
-.econ-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
-.econ-field { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
-.econ-field .k { color: var(--text-mute); }
-.econ-field .v { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.econ-field .v.pos { color: var(--pos); font-weight: 600; }
-.econ-field .v.neg { color: var(--neg); font-weight: 600; }
-
 /* ============================================================
    MOBILE  (< 900px) — desktop spec applies unchanged >= 900px
    ============================================================ */
@@ -363,7 +337,6 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
   .sec-banner { order: 1; }
   .sec-loop   { order: 2; }
   .sec-rates  { order: 3; }
-  .sec-econ   { order: 4; }
   .sec-income { order: 5; }
   .sec-totals { order: 6; }
   .banner { margin: 0; }
@@ -402,10 +375,6 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
   .card-item .logo-slot { width: 42px; height: 42px; flex-shrink: 0; }
   .card-item .fig { margin-left: auto; white-space: nowrap; }
   .card-item .brand-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-
-  /* economics: table -> one card per brand */
-  .card-econ { display: none; }
-  .econ-cards { display: flex; flex-direction: column; gap: 14px; }
 
   /* totals: 2x2 tiles + full-width accent net-profit card */
   .totals { grid-template-columns: 1fr 1fr; gap: 12px; }

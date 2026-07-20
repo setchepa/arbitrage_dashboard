@@ -81,7 +81,7 @@ function optimize() {
 
   const ordered = [...cards].sort((a, b) => a.costCoeff - b.costCoeff);
   const allocs = {};
-  cards.forEach((c) => { allocs[c.name] = { card: c.name, clp: 0, usdc: 0, usdCharged: 0, cashbackUsd: 0 }; });
+  cards.forEach((c) => { allocs[c.name] = { card: c.name, clp: 0, usdc: 0, usdcGross: 0, usdCharged: 0, cashbackUsd: 0 }; });
 
   const book = buda_asks.map(([p, s]) => [p, s]);
   let lvl = 0;
@@ -97,9 +97,10 @@ function optimize() {
       if (revCoeff <= card.costCoeff) { unprofitable = true; break; }
       const levelClpCap = price * size;
       const take = Math.min(levelClpCap, capLeft, budgetLeft);
-      const takeUsdc = (take / price) * feeMult;
+      const takeUsdcGross = take / price;              // before the Buda fee
+      const takeUsdc = takeUsdcGross * feeMult;        // after it
       const a = allocs[card.name];
-      a.clp += take; a.usdc += takeUsdc;
+      a.clp += take; a.usdc += takeUsdc; a.usdcGross += takeUsdcGross;
       a.usdCharged += take / card.fx;
       a.cashbackUsd += (take / card.fx) * card.cashback;
       book[lvl][1] -= take / price;
@@ -109,13 +110,13 @@ function optimize() {
   }
 
   // finalize
-  const tot = { clp: 0, usdCharged: 0, cashback: 0, usdc: 0, sale: 0, profit: 0 };
+  const tot = { clp: 0, usdCharged: 0, cashback: 0, usdc: 0, usdcGross: 0, sale: 0, profit: 0 };
   const rows = cards.map((c) => {
     const a = allocs[c.name];
     const sale = a.usdc * usdcUsd;
     const profit = sale + a.cashbackUsd - a.usdCharged;
     tot.clp += a.clp; tot.usdCharged += a.usdCharged; tot.cashback += a.cashbackUsd;
-    tot.usdc += a.usdc; tot.sale += sale; tot.profit += profit;
+    tot.usdc += a.usdc; tot.usdcGross += a.usdcGross; tot.sale += sale; tot.profit += profit;
     return { ...c, ...a, sale, profit };
   });
 
@@ -127,28 +128,28 @@ function optimize() {
     base: tot.usdc * 1.0,
     roi: tot.usdCharged > 1e-9 ? (tot.profit / tot.usdCharged) * 100 : 0,
     profitable: tot.profit > 0,
-    budaEff: tot.usdc > 1e-9 ? tot.clp / tot.usdc : null,
+    // VWAP excludes the Buda fee — it's the pure order-book average price. The
+    // fee is shown as its own line in the income breakdown.
+    vwap: tot.usdcGross > 1e-9 ? tot.clp / tot.usdcGross : null,
+    feeUsdc: tot.usdcGross - tot.usdc,
   };
 }
 
 /**
  * Volume-weighted average price for buying `clpAmount` of CLP on Buda, walking
- * the live ask book and applying the Buda fee — i.e. the average CLP/USDC you'd
- * actually pay for that size, not the top-of-book quote.
+ * the live ask book — the pure order-book average CLP/USDC for that size.
  *
- * When the optimizer deploys the whole budget (the usual case) this equals
- * `budaEff` (= CLP spent / USDC bought), which is what the income breakdown
- * shows. It's used as the rate-card fallback when nothing is deployed, so the
- * card still shows a live number instead of a dash.
+ * Excludes the Buda fee (that's a separate line in the income breakdown), so
+ * this matches the buy-leg rate shown there. Used as the rate-card fallback
+ * when the optimizer deploys nothing, so the card still shows a live number.
  */
 function vwapForBudget(clpAmount) {
   if (!market || !(clpAmount > 0)) return null;
-  const feeMult = 1 - state.budaFee / 100;
   let left = clpAmount, usdc = 0;
   for (const [price, size] of market.buda_asks) {
     if (left <= 1e-9) break;
     const take = Math.min(price * size, left);
-    usdc += (take / price) * feeMult;
+    usdc += take / price;
     left -= take;
   }
   const spent = clpAmount - left;
@@ -167,7 +168,7 @@ function render() {
     $('mcFig').textContent = rate(market.mc_fx);
     // VWAP for the deployed size — the same figure the income breakdown shows.
     // Falls back to the VWAP over the full budget when nothing is deployed.
-    const vwap = (r && r.budaEff) || vwapForBudget(state.budget);
+    const vwap = (r && r.vwap) || vwapForBudget(state.budget);
     $('budaFig').textContent = vwap ? rate(vwap) : DASH;
     $('budaUnit').textContent = `CLP / USDC · ${market.buda_levels} levels`;
     $('asOf').innerHTML = `Visa as of ${market.visa_date} · Mastercard as of ${market.mc_date}`;
@@ -235,59 +236,24 @@ function render() {
     $('bannerMsg').textContent = 'Not profitable right now — best action is to deploy nothing.';
   }
 
-  // card economics table (sorted by cost coeff asc)
-  const econ = [...r.rows].sort((a, b) => a.costCoeff - b.costCoeff);
-  $('econBody').innerHTML = econ.map((c) => {
-    const used = c.clp > 0.5;
-    const cap = c.cap === Infinity ? `<span class="mute">${DASH}</span>` : clp(c.cap);
-    const profClass = c.profit > 0 ? 'pos' : (c.profit < 0 ? 'neg' : '');
-    return `<tr>
-      <td>${c.name}</td>
-      <td>${c.network}</td>
-      <td class="num">${c.cashback * 100 % 1 === 0 ? (c.cashback * 100).toFixed(1) : (c.cashback * 100).toFixed(1)}%</td>
-      <td class="num">${cap}</td>
-      <td class="num">${c.costCoeff.toFixed(8)}</td>
-      <td class="num">${used ? clp(c.clp) : `<span class="mute">${DASH}</span>`}</td>
-      <td class="num">${used ? c.usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : `<span class="mute">${DASH}</span>`}</td>
-      <td class="num">${used ? usd(c.cashbackUsd) : `<span class="mute">${DASH}</span>`}</td>
-      <td class="num ${used ? profClass : ''}">${used ? usd(c.profit) : `<span class="mute">${DASH}</span>`}</td>
-    </tr>`;
-  }).join('');
-
-  // card economics — mobile: one card per brand
-  $('econCards').innerHTML = econ.map((c) => {
-    const used = c.clp > 0.5;
-    const cap = c.cap === Infinity ? DASH : clp(c.cap);
-    const cbPct = (c.cashback * 100).toFixed(1) + '%';
-    const usdc = c.usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const profCls = c.profit > 0 ? 'pos' : (c.profit < 0 ? 'neg' : '');
-    const fields = used
-      ? [['Cap (CLP)', cap], ['Cost/CLP', c.costCoeff.toFixed(8)],
-         ['Spend (CLP)', clp(c.clp)], ['USDC bought', usdc],
-         ['Cashback', usd(c.cashbackUsd)], ['Profit', usd(c.profit), profCls]]
-      : [['Cap (CLP)', cap], ['Cost/CLP', c.costCoeff.toFixed(8)]];
-    return `<div class="econ-card ${used ? '' : 'unused'}">
-        <div class="econ-card-head">
-          <span class="brand-dot" style="background:${CARD_DOTS[c.name]}"></span>
-          <span class="ec-name">${c.name}</span>
-          <span class="ec-net">${c.network}${used ? '' : ' · unused'}</span>
-          <span class="cb-pill">${cbPct}</span>
-        </div>
-        <div class="econ-grid">
-          ${fields.map((f) => `<div class="econ-field"><span class="k">${f[0]}</span><span class="v ${f[2] || ''}">${f[1]}</span></div>`).join('')}
-        </div>
-      </div>`;
-  }).join('');
-
   // income breakdown
   const premClass = r.premium > 0 ? 'pos' : (r.premium < 0 ? 'neg' : '');
-  const usdcQty = r.totals.usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const qty = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // One row per card actually charged, so it's clear which cards are being paid.
+  const chargeRows = r.rows.filter((c) => c.clp > 0.5)
+    .sort((a, b) => b.usdCharged - a.usdCharged)
+    .map((c) => `<tr><td><span class="mute">— Less: USD charged to ${c.name} (${c.network})</span></td><td class="num">${usd(-c.usdCharged)}</td></tr>`)
+    .join('')
+    || `<tr><td><span class="mute">— Less: USD charged to cards</span></td><td class="num">${usd(0)}</td></tr>`;
+
   $('incomeBody').innerHTML = `
-    <tr><td>Buy USDC on ${EXCHANGE.name} — ${clp(r.totals.clp)} CLP${r.budaEff ? ` @ ${rate(r.budaEff)}` : ''}</td><td class="num mute">${usdcQty} USDC</td></tr>
-    <tr><td>Sell USDC on ${venue.name} @ $1.00 (base)</td><td class="num">${usd(r.base)}</td></tr>
+    <tr><td>Buy USDC on ${EXCHANGE.name} — ${clp(r.totals.clp)} CLP${r.vwap ? ` @ ${rate(r.vwap)}` : ''}</td><td class="num mute">${qty(r.totals.usdcGross)} USDC</td></tr>
+    <tr><td><span class="mute">— Less: ${EXCHANGE.name} fee (${state.budaFee.toFixed(2)}%)</span></td><td class="num neg">−${qty(r.feeUsdc)} USDC</td></tr>
+    <tr><td>Sell ${qty(r.totals.usdc)} USDC on ${venue.name} @ $1.00 (base)</td><td class="num">${usd(r.base)}</td></tr>
     <tr><td>USDC premium (USDC @ $${rate(state.usdcRate, 4)} vs $1.00)</td><td class="num ${premClass}">${usd(r.premium)}</td></tr>
     <tr><td>Credit-card cashback</td><td class="num pos">${usd(r.totals.cashback)}</td></tr>
-    <tr><td><span class="mute">— Less: USD charged to cards</span></td><td class="num">${usd(-r.totals.usdCharged)}</td></tr>
+    ${chargeRows}
     <tr class="net-row"><td>= Net profit</td><td class="num">${usd(r.totals.profit)}</td></tr>`;
   if (r.premium > 0) $('incomeNote').innerHTML = `USDC is trading <b>above</b> peg ($${rate(state.usdcRate, 4)}), adding <span class="mono">${usd(r.premium)}</span> of premium income on <span class="mono">${r.totals.usdc.toFixed(2)}</span> USDC.`;
   else if (r.premium < 0) $('incomeNote').innerHTML = `USDC is trading <b>below</b> peg ($${rate(state.usdcRate, 4)}), costing <span class="mono">${usd(-r.premium)}</span> vs a $1.00 sale.`;
@@ -308,8 +274,8 @@ function render() {
       ${c.roi ? `<span class="roi-pill">${c.roi}</span>` : ''}
     </div>`).join('');
 
-  $('budaEffNote').textContent = r.budaEff
-    ? `Buda VWAP for ${clp(r.totals.clp)} CLP: ${rate(r.budaEff)} CLP/USDC — the average paid walking the order book (top-of-book ask ${rate(market.buda_best_ask)}).`
+  $('budaEffNote').textContent = r.vwap
+    ? `Buda VWAP for ${clp(r.totals.clp)} CLP: ${rate(r.vwap)} CLP/USDC — the order-book average, before the ${state.budaFee.toFixed(2)}% fee (top-of-book ask ${rate(market.buda_best_ask)}).`
     : '';
 }
 

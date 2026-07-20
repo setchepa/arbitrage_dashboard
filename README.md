@@ -11,8 +11,8 @@ The front-end is a hand-built HTML/CSS/JS page (light/dark, IBM Plex) served by 
 small Flask backend. The optimizer runs client-side in JS so the sidebar controls
 recompute instantly; the backend only supplies live market data. The layout is
 **responsive**: the desktop spec applies at `≥ 900px`; below that it switches to a
-mobile layout (sticky header, collapsible parameters sheet, vertical loop, per-card
-economics, stacked totals) — one codebase, gated on `@media (max-width: 899px)`.
+mobile layout (sticky header, collapsible parameters sheet, vertical loop,
+stacked totals) — one codebase, gated on `@media (max-width: 899px)`.
 
 Behind the dashboard a **cron service** captures the three rates to Postgres every
 10 minutes and **alerts over Telegram** when base-scenario ROI climbs past 2%
