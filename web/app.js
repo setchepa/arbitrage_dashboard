@@ -407,12 +407,68 @@ $('execYes').addEventListener('click', async () => {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'save failed');
     execMsg('✓ Executed trade saved', 'ok');
+    fetchStats();                       // the new trade shows up in the charts
   } catch (e) {
     execMsg('✗ ' + e.message, 'err');
   } finally {
     $('execBtn').disabled = false;
   }
 });
+
+// ============================================================
+//  EXECUTED-PROFIT BAR CHARTS
+// ============================================================
+// Render a zero-baselined bar chart. `data` = [{label, profit}].
+// `labelStep` thins x-axis labels (show every Nth), so 31 daily bars don't
+// collapse into an unreadable smear.
+function renderBars(elId, data, labelStep = 1) {
+  const el = $(elId);
+  const vals = data.map((d) => d.profit);
+  const hasData = vals.some((v) => Math.abs(v) > 1e-9);
+  if (!hasData) {
+    el.innerHTML = '<div class="chart-empty">No executed trades yet.</div>';
+    return;
+  }
+  const maxV = Math.max(0, ...vals);
+  const minV = Math.min(0, ...vals);
+  const range = (maxV - minV) || 1;
+  const zeroFromBottom = (-minV) / range * 100;   // where $0 sits, % from bottom
+
+  const bars = data.map((d, i) => {
+    const hPct = Math.abs(d.profit) / range * 100;
+    const bottom = d.profit >= 0 ? zeroFromBottom : (zeroFromBottom - hPct);
+    const cls = d.profit < 0 ? 'chart-bar neg' : 'chart-bar';
+    const title = `${d.label}: ${usd(d.profit)}`;
+    return `<div class="chart-col" title="${title}">
+        <div class="${cls}" style="bottom:${bottom}%; height:${hPct}%"></div>
+      </div>`;
+  }).join('');
+
+  const labels = data.map((d, i) =>
+    `<div class="chart-xlbl">${(i % labelStep === 0 || i === data.length - 1) ? d.label : ''}</div>`
+  ).join('');
+
+  el.innerHTML =
+    `<div class="chart-plot"><div class="chart-zero" style="bottom:${zeroFromBottom}%"></div>${bars}</div>` +
+    `<div class="chart-xaxis">${labels}</div>`;
+}
+
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const s = await res.json();
+    if (!s.ok) throw new Error(s.error || 'stats failed');
+    const subCls = (v) => v < 0 ? 'chart-sub neg' : 'chart-sub';
+    $('dailySub').textContent = `${s.month_label} · ${usd(s.daily_total)}`;
+    $('dailySub').className = subCls(s.daily_total);
+    $('monthlySub').textContent = `${s.year_label} · ${usd(s.monthly_total)}`;
+    $('monthlySub').className = subCls(s.monthly_total);
+    renderBars('dailyChart', s.daily, Math.max(1, Math.ceil(s.daily.length / 10)));
+    renderBars('monthlyChart', s.monthly, 1);
+  } catch (e) {
+    $('dailyChart').innerHTML = `<div class="chart-empty">Couldn't load: ${e.message}</div>`;
+  }
+}
 
 // ============================================================
 //  LIVE DATA
@@ -461,6 +517,7 @@ function startLive() {
   if (liveTimer) clearInterval(liveTimer);
   liveTimer = setInterval(pollBuda, BUDA_POLL_MS);
   setInterval(fetchRates, CARD_RATE_INTERVAL_MS);
+  setInterval(fetchStats, 5 * 60 * 1000);   // refresh charts every 5 min
   // Catch up immediately when the tab becomes visible again.
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollBuda(); });
 }
@@ -471,4 +528,5 @@ syncFields();
 buildAccordion();
 bindInputs();
 fetchRates().then(startLive);
+fetchStats();
 

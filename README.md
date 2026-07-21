@@ -132,6 +132,19 @@ pointed at **config-as-code path `railway.cron.json`**, which supplies its start
 command and the 10-minute schedule. Each cron tick spins up a container, writes one
 row, and exits.
 
+### Executed-profit charts
+Two dependency-free bar charts at the bottom of the dashboard, both driven by
+`executed = 1` rows via `GET /api/stats`:
+
+- **Net daily profits** — daily sum of `net_profit` for the current month.
+- **Net monthly profit** — monthly sum of `net_profit` for the current year.
+
+Buckets are computed in `REPORT_TZ` (default `America/Santiago`, since the loop
+is CLP-centric) using Postgres `AT TIME ZONE`. The endpoint zero-fills every
+day/month so the axis is complete before data arrives; the client renders
+zero-baselined SVG/CSS bars (green profit, red loss). Charts refresh on load,
+every 5 min, and right after a successful Execute.
+
 ### Executed button
 The dashboard has an **Executed** button under the Income breakdown. Clicking it
 asks **"Sure?"** (Yes / No). **Yes** POSTs the current on-screen figures (rates,

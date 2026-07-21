@@ -10,8 +10,11 @@ Local:      ./venv/bin/python server.py            # http://localhost:8600
 Production: gunicorn server:app --bind 0.0.0.0:$PORT   (see Procfile)
 """
 
+import calendar
 import os
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -108,6 +111,72 @@ def api_rates():
             stale = dict(_cache["data"])
             stale["stale"] = True
             return jsonify(stale)
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
+# Timezone the daily/monthly buckets are computed in. The whole loop is Chile-
+# centric (CLP), so we bucket by Santiago local time; override with REPORT_TZ.
+REPORT_TZ = os.environ.get("REPORT_TZ", "America/Santiago")
+
+
+def _report_now():
+    try:
+        return datetime.now(ZoneInfo(REPORT_TZ)), REPORT_TZ
+    except ZoneInfoNotFoundError:
+        return datetime.now(ZoneInfo("UTC")), "UTC"
+
+
+@app.route("/api/stats")
+def api_stats():
+    """
+    Executed-trade profit aggregates for the bar charts:
+      - daily   : sum of net_profit per day, current month (zero-filled)
+      - monthly : sum of net_profit per month, current year (zero-filled)
+    Only executed=1 rows count.
+    """
+    now_local, tz = _report_now()
+    try:
+        with db.connect() as conn:
+            db.init_schema(conn)
+            daily_rows = conn.execute(
+                """
+                SELECT (captured_at AT TIME ZONE %(tz)s)::date AS d,
+                       COALESCE(SUM(net_profit), 0)
+                FROM rate_snapshots
+                WHERE executed = 1
+                  AND date_trunc('month', captured_at AT TIME ZONE %(tz)s)
+                      = date_trunc('month', now() AT TIME ZONE %(tz)s)
+                GROUP BY d ORDER BY d
+                """, {"tz": tz}).fetchall()
+            monthly_rows = conn.execute(
+                """
+                SELECT EXTRACT(MONTH FROM captured_at AT TIME ZONE %(tz)s)::int AS m,
+                       COALESCE(SUM(net_profit), 0)
+                FROM rate_snapshots
+                WHERE executed = 1
+                  AND date_trunc('year', captured_at AT TIME ZONE %(tz)s)
+                      = date_trunc('year', now() AT TIME ZONE %(tz)s)
+                GROUP BY m ORDER BY m
+                """, {"tz": tz}).fetchall()
+
+        n_days = calendar.monthrange(now_local.year, now_local.month)[1]
+        dmap = {r[0].day: float(r[1]) for r in daily_rows}
+        daily = [{"label": str(d), "profit": dmap.get(d, 0.0)}
+                 for d in range(1, n_days + 1)]
+
+        mmap = {int(r[0]): float(r[1]) for r in monthly_rows}
+        monthly = [{"label": calendar.month_abbr[m], "profit": mmap.get(m, 0.0)}
+                   for m in range(1, 13)]
+
+        return jsonify({
+            "ok": True, "tz": tz,
+            "month_label": now_local.strftime("%B %Y"),
+            "year_label": str(now_local.year),
+            "daily": daily, "monthly": monthly,
+            "daily_total": sum(d["profit"] for d in daily),
+            "monthly_total": sum(m["profit"] for m in monthly),
+        })
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 502
 
 

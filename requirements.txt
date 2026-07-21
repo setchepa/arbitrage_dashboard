@@ -12,3 +12,4 @@ psycopg[binary]==3.3.4
 #   beautifulsoup4==4.15.0 # explore_*.py
 #   lxml==6.1.1
 #   pillow                 # only used to convert/generate logo images
+tzdata==2025.2
