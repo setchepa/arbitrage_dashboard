@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS rate_snapshots (
     captured_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
     visa           NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Visa)
     mc             NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Mastercard)
-    buda           NUMERIC(12,2) NOT NULL    -- CLP per USDC (Buda best ask)
+    buda           NUMERIC(12,2) NOT NULL,   -- CLP per USDC (Buda best ask)
+    net_profit     NUMERIC(12,2),            -- base-scenario net profit (USD)
+    roi            NUMERIC(6,3),             -- base-scenario ROI (%)
+    executed       SMALLINT NOT NULL DEFAULT 0  -- 1 only when the user confirms
 );
 CREATE INDEX IF NOT EXISTS idx_rate_snapshots_captured_at
     ON rate_snapshots (captured_at DESC);
@@ -47,6 +50,11 @@ ALTER TABLE rate_snapshots ALTER COLUMN buda TYPE NUMERIC(12,2);
 ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS visa_as_of;
 ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS mc_as_of;
 ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS buda_levels;
+
+-- Net profit / ROI / executed flag (added to existing databases in place).
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS net_profit NUMERIC(12,2);
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS roi        NUMERIC(6,3);
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS executed   SMALLINT NOT NULL DEFAULT 0;
 
 -- Single-row latch for stepped ROI alerts. Not a history table: it remembers the
 -- highest 0.5% band already alerted (0 = 2.0%, 1 = 2.5%, 2 = 3.0%, ...), so a
@@ -90,18 +98,26 @@ def init_schema(conn=None):
 
 def insert_snapshot(row, conn=None):
     """
-    row: dict with visa, mc, buda.
+    row: dict with visa, mc, buda, and optionally net_profit, roi, executed.
+    `executed` defaults to 0 — it's only ever 1 when the user confirms a trade
+    via the dashboard's Executed button.
     Returns the new row's id and captured_at.
     """
+    params = {
+        "visa": row["visa"], "mc": row["mc"], "buda": row["buda"],
+        "net_profit": row.get("net_profit"),
+        "roi": row.get("roi"),
+        "executed": int(row.get("executed", 0)),
+    }
     sql = """
-        INSERT INTO rate_snapshots (visa, mc, buda)
-        VALUES (%(visa)s, %(mc)s, %(buda)s)
+        INSERT INTO rate_snapshots (visa, mc, buda, net_profit, roi, executed)
+        VALUES (%(visa)s, %(mc)s, %(buda)s, %(net_profit)s, %(roi)s, %(executed)s)
         RETURNING id, captured_at;
     """
     own = conn is None
     c = connect() if own else conn
     try:
-        cur = c.execute(sql, row)
+        cur = c.execute(sql, params)
         result = cur.fetchone()
         c.commit()
         return result

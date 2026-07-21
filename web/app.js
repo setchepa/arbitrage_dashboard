@@ -25,6 +25,7 @@ const state = {
 
 let market = null; // { visa_fx, mc_fx, buda_best_ask, buda_asks, ... }
 let flowCardsSig = null; // guards the Step-1 rebuild so logos don't flicker
+let lastResult = null;   // current on-screen figures, for the Executed button
 
 // ---- logos (drop matching PNGs into web/logos/; missing files fall back to
 //      the empty "logo" placeholder automatically) ----
@@ -277,6 +278,15 @@ function render() {
   $('budaEffNote').textContent = r.vwap
     ? `Buda VWAP for ${clp(r.totals.clp)} CLP: ${rate(r.vwap)} CLP/USDC — the order-book average, before the ${state.budaFee.toFixed(2)}% fee (top-of-book ask ${rate(market.buda_best_ask)}).`
     : '';
+
+  // Snapshot the current on-screen figures for the Executed button.
+  lastResult = {
+    visa: market.visa_fx,
+    mc: market.mc_fx,
+    buda: market.buda_best_ask,
+    net_profit: r.totals.profit,
+    roi: r.roi,
+  };
 }
 
 // ============================================================
@@ -369,6 +379,39 @@ $('mThemeToggle').addEventListener('click', toggleTheme);
 $('gearBtn').addEventListener('click', () => {
   state.paramsOpen = !state.paramsOpen;
   document.querySelector('.app').classList.toggle('params-open', state.paramsOpen);
+});
+
+// ---- Executed button: click -> "Sure?" Yes/No -> POST executed=1 ----
+function showExecConfirm(show) {
+  $('execBtn').hidden = show;
+  $('execConfirm').hidden = !show;
+}
+function execMsg(text, cls) {
+  const el = $('execMsg');
+  el.textContent = text; el.className = 'exec-msg ' + cls; el.hidden = false;
+  setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+$('execBtn').addEventListener('click', () => showExecConfirm(true));
+$('execNo').addEventListener('click', () => showExecConfirm(false));  // No -> nothing happens
+$('execYes').addEventListener('click', async () => {
+  if (!lastResult) return;
+  showExecConfirm(false);
+  $('execBtn').disabled = true;
+  try {
+    const res = await fetch('/api/executed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lastResult),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'save failed');
+    execMsg('✓ Executed trade saved', 'ok');
+  } catch (e) {
+    execMsg('✗ ' + e.message, 'err');
+  } finally {
+    $('execBtn').disabled = false;
+  }
 });
 
 // ============================================================

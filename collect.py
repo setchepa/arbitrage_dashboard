@@ -88,14 +88,6 @@ def collect_once():
     mc_fx = mc["reverse_rate"]
     buda_ask = asks[0][0]
 
-    # Numbers only, 2 decimals (the NUMERIC(12,2) columns enforce it; we round
-    # here too so the logged line matches exactly what lands in the table).
-    row = {
-        "visa": round(visa_fx, 2),   # CLP per USD
-        "mc": round(mc_fx, 2),       # CLP per USD
-        "buda": round(buda_ask, 2),  # CLP per USDC
-    }
-
     # Base-scenario ROI (full precision rates, not the rounded stored values).
     allocs, summary = optimize(
         DEFAULT_CARDS, visa_fx, mc_fx, asks,
@@ -104,6 +96,17 @@ def collect_once():
         usdc_usd=BASE_USDC_USD,
     )
     roi = summary["roi_pct"]
+
+    # Numbers only, 2 decimals (the NUMERIC(12,2) columns enforce it; we round
+    # here too so the logged line matches exactly what lands in the table).
+    row = {
+        "visa": round(visa_fx, 2),   # CLP per USD
+        "mc": round(mc_fx, 2),       # CLP per USD
+        "buda": round(buda_ask, 2),  # CLP per USDC
+        "net_profit": round(summary["total_profit_usd"], 2),
+        "roi": round(roi, 3),
+        "executed": 0,               # collector snapshots are never executed trades
+    }
 
     with db.connect() as conn:
         db.init_schema(conn)                   # idempotent bootstrap

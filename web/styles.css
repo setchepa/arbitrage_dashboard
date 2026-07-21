@@ -63,6 +63,7 @@
 
 /* ---- Base ---- */
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* beat author display rules (e.g. exec-confirm) */
 html, body { margin: 0; padding: 0; }
 body {
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
@@ -283,6 +284,29 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
 /* ---- Footnotes ---- */
 .footnote { font-size: 12.5px; color: var(--text-mute); margin-top: 12px; }
 .footnote .mono { font-size: 12.5px; }
+
+/* ---- Executed button (under the income breakdown) ---- */
+.exec-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; min-height: 40px; }
+.exec-btn {
+  background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+  padding: 10px 22px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  font-family: inherit;
+}
+.exec-btn:hover { filter: brightness(1.06); }
+.exec-btn:disabled { opacity: .55; cursor: default; filter: none; }
+.exec-confirm { display: inline-flex; align-items: center; gap: 10px; }
+.exec-q { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.exec-yes, .exec-no {
+  border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.exec-yes { background: var(--pos); color: #fff; border: none; }
+.exec-no { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--input-border); }
+.exec-yes:hover { filter: brightness(1.06); }
+.exec-no:hover { color: var(--text); }
+.exec-msg { font-size: 13px; font-weight: 600; }
+.exec-msg.ok { color: var(--pos); }
+.exec-msg.err { color: var(--neg); }
 
 /* ---- Mobile header (hidden on desktop) ---- */
 .m-header { display: none; }

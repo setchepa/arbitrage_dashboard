@@ -112,6 +112,9 @@ Table `rate_snapshots` — numbers only:
 | `visa` | `NUMERIC(12,2)` — CLP per USD |
 | `mc` | `NUMERIC(12,2)` — CLP per USD |
 | `buda` | `NUMERIC(12,2)` — CLP per USDC (best ask) |
+| `net_profit` | `NUMERIC(12,2)` — base-scenario net profit (USD) |
+| `roi` | `NUMERIC(6,3)` — base-scenario ROI (%) |
+| `executed` | `SMALLINT` — `0` for collector rows; `1` only when the user confirms a trade |
 
 Schema is created on first run and `init_schema()` carries an idempotent migration
 (renames legacy `visa_fx`/`mc_fx`/`buda_best_ask`, forces 2 decimals, drops the old
@@ -128,6 +131,13 @@ The `collector` service has `DATABASE_URL=${{Postgres.DATABASE_URL}}` and must b
 pointed at **config-as-code path `railway.cron.json`**, which supplies its start
 command and the 10-minute schedule. Each cron tick spins up a container, writes one
 row, and exits.
+
+### Executed button
+The dashboard has an **Executed** button under the Income breakdown. Clicking it
+asks **"Sure?"** (Yes / No). **Yes** POSTs the current on-screen figures (rates,
+net profit, ROI) to `POST /api/executed`, which inserts a `rate_snapshots` row
+with `executed=1`; **No** does nothing. Collector snapshots always store
+`executed=0`, so the flag marks exactly the trades you chose to run.
 
 ## Telegram alerts (ROI ≥ 2%)
 Each 10-minute tick, `collect.py` also runs the optimizer on the **base scenario**

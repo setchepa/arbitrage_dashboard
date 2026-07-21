@@ -18,6 +18,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from visa_rate import get_visa_rate
 from mastercard_rate import get_mastercard_rate
 from buda_rate import get_buda_asks
+import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -107,6 +108,34 @@ def api_rates():
             stale = dict(_cache["data"])
             stale["stale"] = True
             return jsonify(stale)
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
+@app.route("/api/executed", methods=["POST"])
+def api_executed():
+    """
+    Record an executed trade: inserts a rate_snapshots row with executed=1 and
+    the client's current on-screen figures (the scenario the user chose to run).
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        row = {
+            "visa": round(float(data["visa"]), 2),
+            "mc": round(float(data["mc"]), 2),
+            "buda": round(float(data["buda"]), 2),
+            "net_profit": round(float(data["net_profit"]), 2),
+            "roi": round(float(data["roi"]), 3),
+            "executed": 1,
+        }
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"ok": False, "error": f"bad payload: {e}"}), 400
+
+    try:
+        with db.connect() as conn:
+            db.init_schema(conn)
+            new_id, captured_at = db.insert_snapshot(row, conn)
+        return jsonify({"ok": True, "id": new_id, "captured_at": captured_at.isoformat()})
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 502
 
 
