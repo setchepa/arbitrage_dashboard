@@ -418,39 +418,75 @@ $('execYes').addEventListener('click', async () => {
 // ============================================================
 //  EXECUTED-PROFIT BAR CHARTS
 // ============================================================
-// Render a zero-baselined bar chart. `data` = [{label, profit}].
-// `labelStep` thins x-axis labels (show every Nth), so 31 daily bars don't
-// collapse into an unreadable smear.
+// "Nice" round number near `range` (1/2/5 x 10^n), for readable axis ticks.
+function niceNum(range, round) {
+  const r = range || 1;
+  const exp = Math.floor(Math.log10(r));
+  const frac = r / Math.pow(10, exp);
+  let nf;
+  if (round) nf = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
+  else nf = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return nf * Math.pow(10, exp);
+}
+// Axis bounds + evenly spaced ticks spanning [min, max] (both forced to include 0).
+function niceScale(min, max, count = 4) {
+  if (min === max) max = min + 1;
+  const step = niceNum((max - min) / count, true) || 1;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step * 0.5; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
+  return { ticks, lo, hi, step };
+}
+// Compact currency label for a Y tick (no cents unless the step is sub-dollar).
+function ytick(v, step) {
+  const abs = Math.abs(v);
+  const s = step >= 1
+    ? Math.round(abs).toLocaleString('en-US')
+    : abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? '−$' : '$') + s;
+}
+
+// Render a zero-baselined bar chart with a $ Y-axis and dashed gridlines.
+// `data` = [{label, profit}]; `labelStep` thins x-axis labels so 31 daily bars
+// don't collapse into an unreadable smear.
 function renderBars(elId, data, labelStep = 1) {
   const el = $(elId);
   const vals = data.map((d) => d.profit);
-  const hasData = vals.some((v) => Math.abs(v) > 1e-9);
-  if (!hasData) {
+  if (!vals.some((v) => Math.abs(v) > 1e-9)) {
     el.innerHTML = '<div class="chart-empty">No executed trades yet.</div>';
     return;
   }
-  const maxV = Math.max(0, ...vals);
-  const minV = Math.min(0, ...vals);
-  const range = (maxV - minV) || 1;
-  const zeroFromBottom = (-minV) / range * 100;   // where $0 sits, % from bottom
+  const { ticks, lo, hi, step } = niceScale(Math.min(0, ...vals), Math.max(0, ...vals), 4);
+  const span = (hi - lo) || 1;
+  const pct = (v) => (v - lo) / span * 100;
 
-  const bars = data.map((d, i) => {
-    const hPct = Math.abs(d.profit) / range * 100;
-    const bottom = d.profit >= 0 ? zeroFromBottom : (zeroFromBottom - hPct);
+  const gridlines = ticks.map((t) =>
+    `<div class="chart-gline${Math.abs(t) < 1e-9 ? ' zero' : ''}" style="bottom:${pct(t)}%"></div>`
+  ).join('');
+  const yaxis = ticks.map((t) =>
+    `<span class="chart-ytick" style="bottom:${pct(t)}%">${ytick(t, step)}</span>`
+  ).join('');
+  const cols = data.map((d) => {
+    const hPct = Math.abs(d.profit) / span * 100;
+    const bottom = pct(Math.min(0, d.profit));   // top of a negative bar is $0
     const cls = d.profit < 0 ? 'chart-bar neg' : 'chart-bar';
-    const title = `${d.label}: ${usd(d.profit)}`;
-    return `<div class="chart-col" title="${title}">
+    return `<div class="chart-col" title="${d.label}: ${usd(d.profit)}">
         <div class="${cls}" style="bottom:${bottom}%; height:${hPct}%"></div>
       </div>`;
   }).join('');
-
   const labels = data.map((d, i) =>
     `<div class="chart-xlbl">${(i % labelStep === 0 || i === data.length - 1) ? d.label : ''}</div>`
   ).join('');
 
   el.innerHTML =
-    `<div class="chart-plot"><div class="chart-zero" style="bottom:${zeroFromBottom}%"></div>${bars}</div>` +
-    `<div class="chart-xaxis">${labels}</div>`;
+    `<div class="chart-grid">
+       <div class="chart-yaxis">${yaxis}</div>
+       <div class="chart-body">
+         <div class="chart-plot">${gridlines}<div class="chart-cols">${cols}</div></div>
+       </div>
+     </div>
+     <div class="chart-xaxis">${labels}</div>`;
 }
 
 async function fetchStats() {
