@@ -24,6 +24,7 @@ Exits non-zero on failure so the scheduler surfaces the error.
 import math
 import os
 import sys
+import time
 import traceback
 
 from visa_rate import get_visa_rate
@@ -79,10 +80,31 @@ def build_alert(roi, band, summary, allocs, visa_fx, mc_fx, buda_ask):
     )
 
 
+def _retry(label, fn, attempts=4, base_delay=4):
+    """
+    Call fn(), retrying transient upstream failures with linear backoff. The
+    scrapers sit behind Cloudflare/Akamai, which intermittently return edge
+    errors (e.g. HTTP 520) that succeed on a retry seconds later. Re-raises the
+    last error if every attempt fails, so a genuine outage still exits non-zero.
+    """
+    last = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                wait = base_delay * (i + 1)
+                print(f"  ! {label} attempt {i + 1}/{attempts} failed: {e} "
+                      f"— retrying in {wait}s", file=sys.stderr)
+                time.sleep(wait)
+    raise last
+
+
 def collect_once():
-    visa = get_visa_rate("CLP", "USD", 1, 0)
-    mc = get_mastercard_rate("CLP", "USD", 1, 0)
-    asks = get_buda_asks()
+    visa = _retry("visa", lambda: get_visa_rate("CLP", "USD", 1, 0))
+    mc = _retry("mastercard", lambda: get_mastercard_rate("CLP", "USD", 1, 0))
+    asks = _retry("buda", get_buda_asks)
 
     visa_fx = visa["reverse_rate"]
     mc_fx = mc["reverse_rate"]
