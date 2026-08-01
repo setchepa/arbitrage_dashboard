@@ -14,9 +14,9 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS rate_snapshots (
     id             BIGSERIAL PRIMARY KEY,
     captured_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
-    visa           NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Visa)
-    mc             NUMERIC(12,2) NOT NULL,   -- CLP per USD  (Mastercard)
-    buda           NUMERIC(12,2) NOT NULL,   -- CLP per USDC (Buda best ask)
+    visa           NUMERIC(12,2),            -- CLP per USD  (Visa; NULL if unavailable)
+    mc             NUMERIC(12,2),            -- CLP per USD  (Mastercard; NULL if unavailable)
+    buda           NUMERIC(12,2),            -- CLP per USDC (Buda best ask; NULL if unavailable)
     net_profit     NUMERIC(12,2),            -- base-scenario net profit (USD)
     roi            NUMERIC(6,3),             -- base-scenario ROI (%)
     executed       SMALLINT NOT NULL DEFAULT 0  -- 1 only when the user confirms
@@ -55,6 +55,12 @@ ALTER TABLE rate_snapshots DROP COLUMN IF EXISTS buda_levels;
 ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS net_profit NUMERIC(12,2);
 ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS roi        NUMERIC(6,3);
 ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS executed   SMALLINT NOT NULL DEFAULT 0;
+
+-- Resilience: a source webpage can fail (e.g. Mastercard behind Akamai). Allow
+-- NULL rates so a partial tick is still recorded instead of crashing the run.
+ALTER TABLE rate_snapshots ALTER COLUMN visa DROP NOT NULL;
+ALTER TABLE rate_snapshots ALTER COLUMN mc   DROP NOT NULL;
+ALTER TABLE rate_snapshots ALTER COLUMN buda DROP NOT NULL;
 
 -- Single-row latch for stepped ROI alerts. Not a history table: it remembers the
 -- highest 0.5% band already alerted (0 = 2.0%, 1 = 2.5%, 2 = 3.0%, ...), so a
