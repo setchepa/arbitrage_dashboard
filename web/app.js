@@ -11,14 +11,14 @@
 const state = {
   theme: 'light',
   budget: 5000000,
-  budaFee: 0.30,
+  budaFee: 0.25,
   usdcRate: 1.0,
   openCard: null,
   showFlow: true,
   paramsOpen: false,  // mobile-only: parameters sheet open?
   cards: [
     { name: 'Fidelity',   network: 'Visa',       cashback: 2.0, capOn: true,  cap: 5000000, dot: '#1F7B2C' },
-    { name: 'CapitalOne', network: 'Mastercard', cashback: 1.5, capOn: false, cap: 5000000, dot: '#CF2128' },
+    { name: 'CapitalOne', network: 'Mastercard', cashback: 1.5, capOn: true, cap: 0, dot: '#CF2128' },
     { name: 'Chase',      network: 'Visa',       cashback: 1.0, capOn: false, cap: 5000000, dot: '#0052AC' },
   ],
 };
@@ -471,7 +471,7 @@ function renderBars(elId, data, labelStep = 1) {
     const hPct = Math.abs(d.profit) / span * 100;
     const bottom = pct(Math.min(0, d.profit));   // top of a negative bar is $0
     const cls = d.profit < 0 ? 'chart-bar neg' : 'chart-bar';
-    return `<div class="chart-col" title="${d.label}: ${usd(d.profit)}">
+    return `<div class="chart-col" data-tip="${d.label}: ${usd(d.profit)}">
         <div class="${cls}" style="bottom:${bottom}%; height:${hPct}%"></div>
       </div>`;
   }).join('');
@@ -504,6 +504,33 @@ async function fetchStats() {
   } catch (e) {
     $('dailyChart').innerHTML = `<div class="chart-empty">Couldn't load: ${e.message}</div>`;
   }
+}
+
+// ---- chart hover tooltip: show each bar's value under the cursor ----
+let chartTipEl = null;
+function wireChartTips() {
+  chartTipEl = document.createElement('div');
+  chartTipEl.className = 'chart-tip';
+  chartTipEl.hidden = true;
+  document.body.appendChild(chartTipEl);
+
+  const move = (e) => {
+    const col = e.target.closest('.chart-col');
+    if (!col || !col.dataset.tip) { chartTipEl.hidden = true; return; }
+    chartTipEl.textContent = col.dataset.tip;
+    chartTipEl.hidden = false;
+    const pad = 12, w = chartTipEl.offsetWidth, h = chartTipEl.offsetHeight;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + w > window.innerWidth) x = e.clientX - w - pad;
+    if (y + h > window.innerHeight) y = e.clientY - h - pad;
+    chartTipEl.style.left = x + 'px';
+    chartTipEl.style.top = y + 'px';
+  };
+  ['dailyChart', 'monthlyChart'].forEach((id) => {
+    const el = $(id);
+    el.addEventListener('mousemove', move);
+    el.addEventListener('mouseleave', () => { chartTipEl.hidden = true; });
+  });
 }
 
 // ============================================================
@@ -563,6 +590,7 @@ applyTheme();
 syncFields();
 buildAccordion();
 bindInputs();
+wireChartTips();
 fetchRates().then(startLive);
 fetchStats();
 

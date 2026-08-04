@@ -347,6 +347,15 @@ tr.net-row td:first-child { color: var(--accent-ink); font-weight: 600; }
   font-family: 'IBM Plex Mono', monospace; white-space: nowrap; overflow: hidden;
 }
 .chart-empty { color: var(--text-mute); font-size: 13px; text-align: center; padding: 60px 0; }
+.chart-col { cursor: default; }
+.chart-col:hover .chart-bar { filter: brightness(1.12); }
+.chart-tip {
+  position: fixed; z-index: 100; pointer-events: none;
+  background: var(--text); color: var(--bg);
+  padding: 5px 9px; border-radius: 8px; box-shadow: var(--shadow);
+  font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;
+  font-size: 12px; white-space: nowrap;
+}
 
 /* ---- Mobile header (hidden on desktop) ---- */
 .m-header { display: none; }

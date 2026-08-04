@@ -36,7 +36,7 @@ import notify
 
 # Base scenario — must mirror the dashboard defaults in web/app.js `state`.
 BASE_BUDGET_CLP = 5_000_000
-BASE_BUDA_FEE_PCT = 0.30
+BASE_BUDA_FEE_PCT = 0.25
 BASE_USDC_USD = 1.0
 
 # Alert when ROI exceeds this (percent), then again at every further STEP.

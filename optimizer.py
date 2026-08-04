@@ -49,7 +49,7 @@ class Allocation:
 
 DEFAULT_CARDS = [
     Card("Fidelity",   "Visa",       0.020, 5_000_000),
-    Card("CapitalOne", "Mastercard", 0.015, float("inf")),
+    Card("CapitalOne", "Mastercard", 0.015, 0),  # blocked card — cap 0
     Card("Chase",      "Visa",       0.010, float("inf")),
 ]
 
