@@ -17,9 +17,10 @@ const state = {
   showFlow: true,
   paramsOpen: false,  // mobile-only: parameters sheet open?
   cards: [
-    { name: 'Fidelity',   network: 'Visa',       cashback: 2.0, capOn: true,  cap: 5000000, dot: '#1F7B2C' },
-    { name: 'CapitalOne', network: 'Mastercard', cashback: 1.5, capOn: true, cap: 0, dot: '#CF2128' },
-    { name: 'Chase',      network: 'Visa',       cashback: 1.0, capOn: false, cap: 5000000, dot: '#0052AC' },
+    { name: 'Fidelity',        network: 'Visa',       cashback: 2.0, capOn: true,  cap: 5000000,  dot: '#1F7B2C' },
+    { name: 'Bank of America', network: 'Visa',       cashback: 1.6, capOn: true,  cap: 23000000, dot: '#E31837' },
+    { name: 'CapitalOne',      network: 'Mastercard', cashback: 1.5, capOn: true,  cap: 0,        dot: '#CF2128' },
+    { name: 'Chase',           network: 'Visa',       cashback: 1.0, capOn: false, cap: 5000000,  dot: '#0052AC' },
   ],
 };
 
@@ -31,10 +32,14 @@ let lastResult = null;   // current on-screen figures, for the Executed button
 //      the empty "logo" placeholder automatically) ----
 const CARD_LOGOS = {
   Fidelity: 'logos/fidelity.png',
+  'Bank of America': 'logos/bankofamerica.png',
   CapitalOne: 'logos/capitalone.png',
   Chase: 'logos/chase.png',
 };
-const CARD_DOTS = { Fidelity: '#1F7B2C', CapitalOne: '#CF2128', Chase: '#0052AC' };
+const CARD_DOTS = {
+  Fidelity: '#1F7B2C', 'Bank of America': '#E31837',
+  CapitalOne: '#CF2128', Chase: '#0052AC',
+};
 // Sell venue (Step 3) depends on the peg: exactly $1.00 -> Robinhood (sells at
 // peg); any other USDC->USD rate implies selling via Binance instead.
 function sellVenue() {
