@@ -1,29 +1,28 @@
 """
-Rate collector — one shot, meant to be run on a schedule (every 10 minutes).
+ROI alerter — a background thread inside the web service, every 10 minutes.
 
-1. Fetches the three live datapoints (Visa CLP/USD, Mastercard CLP/USD, Buda best
-   ask CLP/USDC) and appends a row to rate_snapshots.
-2. Runs the optimizer on the BASE SCENARIO and, if ROI clears the threshold,
-   sends a Telegram alert.
+Fetches the three live datapoints (Visa CLP/USD, Mastercard CLP/USD, Buda ask
+book), runs the optimizer on the BASE SCENARIO and, if ROI clears the threshold,
+sends a Telegram alert. Nothing is persisted.
 
-Alerting is edge-triggered: it fires once when ROI crosses from below the
-threshold to above it, then stays quiet until ROI drops back under and crosses
-again. The latch lives in the alert_state table so it survives container
-restarts. Telegram is skipped cleanly if its env vars aren't set.
+Alerting is stepped and edge-triggered: it fires once per new 0.5% band above
+the threshold, then stays quiet until ROI drops back under and crosses again.
+The latch lives in memory, so a redeploy re-arms it (at worst one repeat alert
+if a window is open during a deploy). Telegram is skipped cleanly if its env
+vars aren't set.
 
-Run on Railway as a cron service:
-    start command : python collect.py
-    cron schedule : */10 * * * *
+gunicorn runs several workers; a non-blocking file lock makes exactly one of
+them run the loop.
 
-Locally:
-    DATABASE_URL=postgresql://... ./venv/bin/python collect.py
-
-Exits non-zero on failure so the scheduler surfaces the error.
+One-off check from a laptop (sends an alert if ROI is above threshold):
+    TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... ./venv/bin/python alerts.py
 """
 
+import fcntl
 import math
 import os
 import sys
+import threading
 import time
 import traceback
 
@@ -31,7 +30,6 @@ from visa_rate import get_visa_rate
 from mastercard_rate import get_mastercard_rate
 from buda_rate import get_buda_asks
 from optimizer import optimize, DEFAULT_CARDS
-import db
 import notify
 
 # Base scenario — must mirror the dashboard defaults in web/app.js `state`.
@@ -43,8 +41,13 @@ BASE_USDC_USD = 1.0
 # e.g. threshold 2.0 + step 0.5 -> alerts at 2.0%, 2.5%, 3.0%, 3.5%, ...
 ROI_THRESHOLD = float(os.environ.get("ALERT_ROI_THRESHOLD", "2.0"))
 ROI_STEP = float(os.environ.get("ALERT_ROI_STEP", "0.5"))
+INTERVAL_S = int(os.environ.get("ALERT_INTERVAL_S", "600"))  # 10 min
 
 DASHBOARD_URL = "https://web-production-cae25.up.railway.app/"
+LOCK_PATH = "/tmp/arbitrage_alerts.lock"
+
+# Highest band already alerted; None = below threshold / re-armed.
+_last_band = None
 
 
 def alert_band(roi):
@@ -86,7 +89,7 @@ def _retry(label, fn, attempts=4, base_delay=4):
     Call fn(), retrying transient upstream failures with linear backoff. The
     scrapers sit behind Cloudflare/Akamai, which intermittently return edge
     errors (e.g. HTTP 520) that succeed on a retry seconds later. Re-raises the
-    last error if every attempt fails, so a genuine outage still exits non-zero.
+    last error if every attempt fails.
     """
     last = None
     for i in range(attempts):
@@ -104,17 +107,18 @@ def _retry(label, fn, attempts=4, base_delay=4):
 
 def _try(label, fn):
     """Fetch a source, retrying transient errors. Returns None (never raises) if
-    the webpage is genuinely unavailable, so one broken source doesn't crash the
-    whole tick — we store an empty value for it instead."""
+    the webpage is genuinely unavailable, so one broken source doesn't kill the
+    whole tick."""
     try:
         return _retry(label, fn)
     except Exception as e:
-        print(f"  ! {label} unavailable after retries: {e} — storing empty value",
-              file=sys.stderr)
+        print(f"  ! {label} unavailable after retries: {e}", file=sys.stderr)
         return None
 
 
-def collect_once():
+def check_once():
+    global _last_band
+
     visa = _try("visa", lambda: get_visa_rate("CLP", "USD", 1, 0))
     mc = _try("mastercard", lambda: get_mastercard_rate("CLP", "USD", 1, 0))
     asks = _try("buda", get_buda_asks)
@@ -127,7 +131,7 @@ def collect_once():
     # (it's the whole trade); cards are included only when their network's rate
     # is available. A Mastercard-only failure still yields a valid ROI because
     # the base scenario is virtually always won by Fidelity (Visa).
-    roi = net_profit = None
+    roi = None
     allocs = summary = None
     if asks:
         usable = [c for c in DEFAULT_CARDS
@@ -141,48 +145,30 @@ def collect_once():
                 usdc_usd=BASE_USDC_USD,
             )
             roi = summary["roi_pct"]
-            net_profit = summary["total_profit_usd"]
 
-    def r2(v, nd=2):
-        return round(v, nd) if v is not None else None
-
-    row = {
-        "visa": r2(visa_fx), "mc": r2(mc_fx), "buda": r2(buda_ask),
-        "net_profit": r2(net_profit), "roi": r2(roi, 3),
-        "executed": 0,               # collector snapshots are never executed trades
-    }
-
-    with db.connect() as conn:
-        db.init_schema(conn)                   # idempotent bootstrap
-        new_id, captured_at = db.insert_snapshot(row, conn)
-
-        # Alerting only runs when we have a real ROI this tick.
-        band = alert_band(roi) if roi is not None else None
-        alerted = False
-        if roi is not None:
-            last_band = db.get_last_band(conn)
-            if band is None:
-                # Back at/below the threshold — re-arm for the next rise.
-                if last_band is not None:
-                    db.set_last_band(None, conn=conn)
-            elif last_band is None or band > last_band:
-                # Entered a new, higher band (2.0 -> 2.5 -> 3.0 ...): alert once.
-                if notify.enabled():
-                    try:
-                        notify.send_message(
-                            build_alert(roi, band, summary, allocs, visa_fx, mc_fx, buda_ask)
-                        )
-                        alerted = True
-                    except Exception as e:        # never lose the snapshot
-                        print(f"  ! Telegram send failed: {e}", file=sys.stderr)
-                else:
-                    print("  ! ROI above threshold but Telegram env vars unset —"
-                          " no alert sent.", file=sys.stderr)
-                # Advance the band when we alerted, or when Telegram isn't
-                # configured. A transient send failure leaves it unchanged so the
-                # next tick retries instead of silently skipping the step.
-                if alerted or not notify.enabled():
-                    db.set_last_band(band, mark_alert=alerted, conn=conn)
+    band = alert_band(roi) if roi is not None else None
+    alerted = False
+    if roi is not None:
+        if band is None:
+            _last_band = None              # back at/below threshold — re-arm
+        elif _last_band is None or band > _last_band:
+            # Entered a new, higher band (2.0 -> 2.5 -> 3.0 ...): alert once.
+            if notify.enabled():
+                try:
+                    notify.send_message(
+                        build_alert(roi, band, summary, allocs, visa_fx, mc_fx, buda_ask)
+                    )
+                    alerted = True
+                except Exception as e:
+                    print(f"  ! Telegram send failed: {e}", file=sys.stderr)
+            else:
+                print("  ! ROI above threshold but Telegram env vars unset —"
+                      " no alert sent.", file=sys.stderr)
+            # Advance the band when we alerted, or when Telegram isn't
+            # configured. A transient send failure leaves it unchanged so the
+            # next tick retries instead of silently skipping the step.
+            if alerted or not notify.enabled():
+                _last_band = band
 
     def fx(v):
         return f"{v:.2f}" if v is not None else "n/a"
@@ -195,17 +181,34 @@ def collect_once():
     else:
         roi_txt = "ROI n/a"
     print(
-        f"[{captured_at:%Y-%m-%d %H:%M:%S %Z}] snapshot #{new_id} — "
+        f"[alerts {time.strftime('%Y-%m-%d %H:%M:%S %Z')}] "
         f"Visa {fx(visa_fx)} | MC {fx(mc_fx)} | Buda {fx(buda_ask)} | {roi_txt}"
         + (f"  [degraded: {', '.join(missing)} unavailable]" if missing else "")
-        + ("  → ALERT SENT" if alerted else "")
+        + ("  → ALERT SENT" if alerted else ""),
+        flush=True,
     )
-    return new_id
+
+
+def _loop():
+    while True:
+        try:
+            check_once()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(INTERVAL_S)
+
+
+def start():
+    """Start the alert loop in a daemon thread — in one gunicorn worker only."""
+    lock = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()                       # another worker owns the loop
+        return
+    start._lock = lock                     # held for the life of the process
+    threading.Thread(target=_loop, name="roi-alerts", daemon=True).start()
 
 
 if __name__ == "__main__":
-    try:
-        collect_once()
-    except Exception:
-        traceback.print_exc()
-        sys.exit(1)
+    check_once()

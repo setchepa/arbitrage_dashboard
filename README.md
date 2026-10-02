@@ -14,15 +14,14 @@ recompute instantly; the backend only supplies live market data. The layout is
 mobile layout (sticky header, collapsible parameters sheet, vertical loop,
 stacked totals) — one codebase, gated on `@media (max-width: 899px)`.
 
-Behind the dashboard a **cron service** captures the three rates to Postgres every
-10 minutes and **alerts over Telegram** when base-scenario ROI climbs past 2%
-(then every further 0.5%). Three pieces in one repo:
+Inside the web service a background thread checks base-scenario ROI every 10
+minutes and **alerts over Telegram** when it climbs past 2% (then every further
+0.5%). Nothing is stored — there is no database.
 
 | Piece | Entry point | Runs |
 |-------|-------------|------|
 | Dashboard | `server.py` + `web/` | always on (`web` service) |
-| Rate capture | `collect.py` → `db.py` | every 10 min (`collector` cron) |
-| Alerts | `collect.py` → `notify.py` | same tick, when ROI enters a new band |
+| Alerts | `alerts.py` → `notify.py` | every 10 min, thread inside `web` |
 
 ## Sources (no official API keys — the pages' own backends)
 | File | Source | Access method |
@@ -93,75 +92,20 @@ Rendering note: `render()` runs every second, so the Step-1 card block is only
 rebuilt when the allocation actually changes — otherwise recreating its `<img>`
 tags each tick makes the logos flicker back to their placeholder.
 
-## Rate history (Postgres, every 10 minutes)
-`collect.py` captures the three live datapoints and appends one row to Postgres.
-It's a one-shot script run on a schedule — no long-lived process.
-
-| File | Purpose |
-|------|---------|
-| `db.py` | `DATABASE_URL` connection, idempotent schema bootstrap, insert/query helpers |
-| `collect.py` | Fetch the 3 rates → insert one row. Exits non-zero on failure |
-| `railway.cron.json` | Cron service config: `python collect.py`, `*/10 * * * *`, restart `NEVER` |
-
-Table `rate_snapshots` — numbers only:
-
-| Column | Type |
-|--------|------|
-| `id` | `BIGSERIAL` PK |
-| `captured_at` | `TIMESTAMPTZ` (indexed `DESC`) |
-| `visa` | `NUMERIC(12,2)` — CLP per USD |
-| `mc` | `NUMERIC(12,2)` — CLP per USD |
-| `buda` | `NUMERIC(12,2)` — CLP per USDC (best ask) |
-| `net_profit` | `NUMERIC(12,2)` — base-scenario net profit (USD) |
-| `roi` | `NUMERIC(6,3)` — base-scenario ROI (%) |
-| `executed` | `SMALLINT` — `0` for collector rows; `1` only when the user confirms a trade |
-
-Schema is created on first run and `init_schema()` carries an idempotent migration
-(renames legacy `visa_fx`/`mc_fx`/`buda_best_ask`, forces 2 decimals, drops the old
-`visa_as_of`/`mc_as_of`/`buda_levels` columns), so existing databases upgrade
-automatically.
-
-Run it by hand:
-```bash
-DATABASE_URL=postgresql://... ./venv/bin/python collect.py
-```
-
-**Railway setup** — the project has three services: `web`, `Postgres`, `collector`.
-The `collector` service has `DATABASE_URL=${{Postgres.DATABASE_URL}}` and must be
-pointed at **config-as-code path `railway.cron.json`**, which supplies its start
-command and the 10-minute schedule. Each cron tick spins up a container, writes one
-row, and exits.
-
-### Executed-profit charts
-Two dependency-free bar charts at the bottom of the dashboard, both driven by
-`executed = 1` rows via `GET /api/stats`:
-
-- **Net daily profits** — daily sum of `net_profit` for the current month.
-- **Net monthly profit** — monthly sum of `net_profit` for the current year.
-
-Buckets are computed in `REPORT_TZ` (default `America/Santiago`, since the loop
-is CLP-centric) using Postgres `AT TIME ZONE`. The endpoint zero-fills every
-day/month so the axis is complete before data arrives; the client renders
-zero-baselined SVG/CSS bars (green profit, red loss). Charts refresh on load,
-every 5 min, and right after a successful Execute.
-
-### Executed button
-The dashboard has an **Executed** button under the Income breakdown. Clicking it
-asks **"Sure?"** (Yes / No). **Yes** POSTs the current on-screen figures (rates,
-net profit, ROI) to `POST /api/executed`, which inserts a `rate_snapshots` row
-with `executed=1`; **No** does nothing. Collector snapshots always store
-`executed=0`, so the flag marks exactly the trades you chose to run.
-
 ## Telegram alerts (ROI ≥ 2%)
-Each 10-minute tick, `collect.py` also runs the optimizer on the **base scenario**
-(5,000,000 CLP, 0.30% Buda fee, 1.0 peg) and sends a Telegram alert when ROI
-climbs through the alert ladder.
+Every 10 minutes `alerts.py` runs the optimizer on the **base scenario**
+(5,000,000 CLP, 0.25% Buda fee, 1.0 peg) and sends a Telegram alert when ROI
+climbs through the alert ladder. It runs as a daemon thread started by
+`server.py`; gunicorn has two workers, so a non-blocking file lock
+(`/tmp/arbitrage_alerts.lock`) lets exactly one of them run the loop.
 
-| File | Purpose |
-|------|---------|
+| File | Role |
+|------|------|
 | `notify.py` | Telegram Bot API client (stdlib only, no dependency) + `--chat-id` / `--test` helpers |
-| `collect.py` | Computes base-scenario ROI, decides the band, sends the alert |
-| `db.py` | `alert_state` single-row table holding `last_band` |
+| `alerts.py` | Fetches rates, computes base-scenario ROI, decides the band, sends the alert |
+
+Run one check by hand: `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... ./venv/bin/python alerts.py`.
+Set `DISABLE_ALERTS=1` to keep a local dev server from starting the thread.
 
 ### Telegram cannot text a phone number
 This is a hard API limitation, not a workaround problem:
@@ -178,7 +122,7 @@ functionally equivalent.
 1. Message **@BotFather** → `/newbot` → copy the token
 2. Message your new bot (e.g. `/start`) so it's allowed to reply to you
 3. `TELEGRAM_BOT_TOKEN=... python notify.py --chat-id` to discover your chat id
-4. Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` on the **`collector`** service
+4. Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` on the **`web`** service
 5. `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... python notify.py --test`
 
 Secrets live only in Railway service variables — never in this repo.
@@ -190,6 +134,8 @@ Secrets live only in Railway service variables — never in this repo.
 | `TELEGRAM_CHAT_ID` | — | Target chat. Absent ⇒ alerting silently disabled |
 | `ALERT_ROI_THRESHOLD` | `2.0` | ROI % at which the ladder starts |
 | `ALERT_ROI_STEP` | `0.5` | ROI % increment between alerts |
+| `ALERT_INTERVAL_S` | `600` | Seconds between ROI checks |
+| `DISABLE_ALERTS` | — | Set to `1` to not start the alert thread |
 
 ### Stepped alerting
 ROI is bucketed into `ALERT_ROI_STEP` bands above the threshold; an alert fires
@@ -212,11 +158,11 @@ Consequences worth knowing:
 - A jump straight from 1.9% to 4.7% sends **one** alert, at the 4.5% level — not
   one message per level crossed.
 
-State is the single-row `alert_state` table (`last_band`, `last_alert_at`) — not a
-history table — so it survives container restarts. If the Telegram vars are unset
-the alert is skipped cleanly and the snapshot is still recorded. A transient send
-failure leaves the band unchanged so the next tick retries rather than silently
-skipping a step.
+State is a single in-memory value (the highest band alerted). A redeploy re-arms
+it, so at worst one repeat alert fires if a window is open during a deploy. If the
+Telegram vars are unset the alert is skipped cleanly. A transient send failure
+leaves the band unchanged so the next tick retries rather than silently skipping a
+step.
 
 ### Message format
 ```
@@ -233,8 +179,8 @@ https://web-production-cae25.up.railway.app/
 
 ### Operational gotchas
 - **Railway bakes env vars into a deployment.** Setting variables with
-  `--skip-deploys` leaves the running deployment untouched, so the next cron tick
-  still uses the old values. Trigger a redeploy (or set variables without that
+  `--skip-deploys` leaves the running deployment untouched, so the alert thread
+  keeps the old values. Trigger a redeploy (or set variables without that
   flag) and confirm a new `SUCCESS` deployment before expecting new behaviour.
 - **`getUpdates` returns an empty list once updates are consumed or expire**
   (they're kept ~24h). If `--chat-id` finds nothing even though you messaged the
