@@ -5,6 +5,10 @@ Fetches the three live datapoints (Visa CLP/USD, Mastercard CLP/USD, Buda ask
 book), runs the optimizer on the BASE SCENARIO and, if ROI clears the threshold,
 sends a Telegram alert. Nothing is persisted.
 
+Quiet hours (11pm-7am ET by default): the loop goes silent so Railway's
+Serverless mode can sleep the service overnight. By day it pings Buda every
+2 minutes so the service stays awake between checks.
+
 Alerting is stepped and edge-triggered: it fires once per new 0.5% band above
 the threshold, then stays quiet until ROI drops back under and crosses again.
 The latch lives in memory, so a redeploy re-arms it (at worst one repeat alert
@@ -25,6 +29,8 @@ import sys
 import threading
 import time
 import traceback
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from visa_rate import get_visa_rate
 from mastercard_rate import get_mastercard_rate
@@ -42,6 +48,17 @@ BASE_USDC_USD = 1.0
 ROI_THRESHOLD = float(os.environ.get("ALERT_ROI_THRESHOLD", "2.0"))
 ROI_STEP = float(os.environ.get("ALERT_ROI_STEP", "0.5"))
 INTERVAL_S = int(os.environ.get("ALERT_INTERVAL_S", "600"))  # 10 min
+
+# Quiet hours (local time in QUIET_TZ): no checks and no outbound traffic, so
+# Railway's Serverless mode can put the service to sleep overnight. A GitHub
+# Actions job (.github/workflows/wake.yml) pings the site to wake it at 7am.
+QUIET_TZ = ZoneInfo(os.environ.get("QUIET_TZ", "America/New_York"))
+QUIET_START_H = int(os.environ.get("QUIET_START_H", "23"))   # 11pm
+QUIET_END_H = int(os.environ.get("QUIET_END_H", "7"))        # 7am
+# Outside quiet hours, touch Buda at least this often. Railway sleeps a service
+# after ~5 min without outbound packets, which would freeze this thread
+# between 10-minute checks.
+KEEPALIVE_S = int(os.environ.get("ALERT_KEEPALIVE_S", "120"))
 
 DASHBOARD_URL = "https://web-production-cae25.up.railway.app/"
 LOCK_PATH = "/tmp/arbitrage_alerts.lock"
@@ -189,13 +206,32 @@ def check_once():
     )
 
 
+def in_quiet_hours(now=None):
+    h = (now or datetime.now(QUIET_TZ)).hour
+    if QUIET_START_H <= QUIET_END_H:
+        return QUIET_START_H <= h < QUIET_END_H
+    return h >= QUIET_START_H or h < QUIET_END_H     # window wraps midnight
+
+
 def _loop():
+    next_check = 0.0
     while True:
-        try:
-            check_once()
-        except Exception:
-            traceback.print_exc()
-        time.sleep(INTERVAL_S)
+        if in_quiet_hours():
+            next_check = 0.0                 # check as soon as quiet hours end
+            time.sleep(60)
+            continue
+        if time.monotonic() >= next_check:
+            try:
+                check_once()
+            except Exception:
+                traceback.print_exc()
+            next_check = time.monotonic() + INTERVAL_S
+        else:
+            try:
+                get_buda_asks()              # keepalive: stay awake by day
+            except Exception:
+                pass
+        time.sleep(KEEPALIVE_S)
 
 
 def start():

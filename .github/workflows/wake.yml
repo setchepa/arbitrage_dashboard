@@ -1,0 +1,21 @@
+# Wake the Railway web service at 7am ET after its overnight sleep.
+# Railway's Serverless mode only wakes a service on an incoming request, and
+# alerts.py stays quiet 11pm-7am ET so the service can sleep.
+# GitHub cron is UTC with no DST, so fire at both 11:00 UTC (7am EDT) and
+# 12:00 UTC (7am EST); the off-season run just wakes it briefly.
+name: Wake dashboard
+
+on:
+  schedule:
+    - cron: "0 11 * * *"
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /healthz (cold boot may 502 at first)
+        run: |
+          curl -fsS --retry 6 --retry-delay 10 --retry-all-errors --max-time 60 \
+            https://web-production-cae25.up.railway.app/healthz

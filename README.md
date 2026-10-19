@@ -107,6 +107,21 @@ climbs through the alert ladder. It runs as a daemon thread started by
 Run one check by hand: `TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... ./venv/bin/python alerts.py`.
 Set `DISABLE_ALERTS=1` to keep a local dev server from starting the thread.
 
+### Overnight sleep (11pm–7am ET)
+The `web` service has Railway **Serverless** enabled, which sleeps a service
+after ~5 min with no outbound packets and wakes it on the next request.
+- **Quiet hours:** from 11pm to 7am ET the alert loop makes no requests, so with
+  no dashboard tab open (the page polls Buda every second) the service sleeps.
+  No alerts are sent overnight.
+- **Daytime keepalive:** checks run every 10 min, longer than Railway's idle
+  window, so between checks the loop fetches Buda's order book every 2 min to
+  stay awake.
+- **Wake-up:** `.github/workflows/wake.yml` curls `/healthz` at 11:00 and 12:00
+  UTC (7am EDT / 7am EST). GitHub cron can run 5–30 min late, and GitHub
+  disables scheduled workflows after 60 days with no repo activity; re-enable it
+  from the Actions tab if that happens. Run it by hand with
+  `gh workflow run wake.yml`.
+
 ### Telegram cannot text a phone number
 This is a hard API limitation, not a workaround problem:
 
@@ -136,6 +151,9 @@ Secrets live only in Railway service variables — never in this repo.
 | `ALERT_ROI_STEP` | `0.5` | ROI % increment between alerts |
 | `ALERT_INTERVAL_S` | `600` | Seconds between ROI checks |
 | `DISABLE_ALERTS` | — | Set to `1` to not start the alert thread |
+| `QUIET_TZ` | `America/New_York` | Time zone for quiet hours |
+| `QUIET_START_H` / `QUIET_END_H` | `23` / `7` | Quiet-hours window (no checks, lets the service sleep) |
+| `ALERT_KEEPALIVE_S` | `120` | Daytime keepalive ping interval, seconds |
 
 ### Stepped alerting
 ROI is bucketed into `ALERT_ROI_STEP` bands above the threshold; an alert fires
