@@ -23,6 +23,12 @@ VISA_REFERER = (
 )
 
 
+def _num(v):
+    """Visa formats numbers as display strings: '1,006.880011' once CLP/USD
+    passed 1,000. Strip thousands separators before converting."""
+    return float(str(v).replace(",", ""))
+
+
 def get_visa_rate(from_curr, to_curr, amount=1, fee=0, date_mmddyyyy=None):
     """
     Replicate the Visa calculator for "From `from_curr` to `to_curr`".
@@ -63,12 +69,12 @@ def get_visa_rate(from_curr, to_curr, amount=1, fee=0, date_mmddyyyy=None):
         "source": "Visa",
         "from_currency": ov["fromCurrency"],      # e.g. CLP
         "to_currency": ov["toCurrency"],          # e.g. USD
-        "amount": float(ov["fromAmount"]),
-        "exchange_rate": float(ov["fxRateVisa"]),          # 1 from_curr in to_curr
-        "converted_amount": float(ov["toAmountWithVisaRate"]),
-        "reverse_rate": float(data["reverseAmount"]),      # 1 to_curr in from_curr
+        "amount": _num(ov["fromAmount"]),
+        "exchange_rate": _num(ov["fxRateVisa"]),          # 1 from_curr in to_curr
+        "converted_amount": _num(ov["toAmountWithVisaRate"]),
+        "reverse_rate": _num(data["reverseAmount"]),      # 1 to_curr in from_curr
         "as_of_date": data["disclaimerDate"],
-        "bank_fee_pct": float(data["conversionBankFee"]),
+        "bank_fee_pct": _num(data["conversionBankFee"]),
     }
 
 
